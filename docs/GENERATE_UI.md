@@ -18,6 +18,8 @@ Generate a beautiful, non-interactive UI mockup using React and Tailwind CSS tha
 - **Component Location**: The code must be placed in `Contents.tsx` file
 - **Component Name**: Export as a default functional component named `Contents`
 - **Root Element**: The root component must be a `div` with classes `flex h-full w-full`
+- **Icons**: Use `react-icons` library for all icons (import from `react-icons/fa`, `react-icons/md`, `react-icons/hi`, etc.)
+- **Images**: Use Unsplash for image mockups (use `https://images.unsplash.com/` URLs with appropriate dimensions)
 - Component should be self-contained and ready to render
 
 ### Design Best Practices
@@ -41,9 +43,21 @@ Generate a beautiful, non-interactive UI mockup using React and Tailwind CSS tha
 ## Example Structure
 
 ```tsx
+import { FaHome, FaUser } from "react-icons/fa";
+
 export default function Contents() {
   return (
     <div className="flex h-full w-full">
+      {/* Example with react-icons */}
+      <FaHome className="text-blue-500" />
+      
+      {/* Example with Unsplash image */}
+      <img 
+        src="https://images.unsplash.com/photo-1234567890?w=390&h=844&fit=crop" 
+        alt="Description" 
+        className="w-full h-full object-cover"
+      />
+      
       {/* Your UI content here */}
     </div>
   );
@@ -57,6 +71,6 @@ export default function Contents() {
 - Solve the user's problem through thoughtful design and layout
 - Make it look production-ready and polished
 - Ensure all text is readable and properly sized for mobile
-- Use appropriate icons/images placeholders if needed
+- Use `react-icons` for all icon needs - choose appropriate icon sets (FontAwesome, Material Design, Heroicons, etc.)
+- Use Unsplash images for image mockups - select relevant, high-quality images that fit the context
 - Consider the user's specific requirements and context
-
