@@ -12,7 +12,8 @@ Generate a beautiful, non-interactive UI mockup using React and Tailwind CSS tha
 - **Fullscreen**: The UI should fill the entire container (390px × 844px)
 
 ### Code Structure
-- Use only standard HTML elements (`div`, `section`, `header`, `main`, `footer`, `img`, `p`, `h1`, `h2`, `h3`, `span`, `ul`, `li`, etc.)
+- Use only standard HTML elements (`div`, `img`, `p`, `h1`, `h2`, `h3`, `span`, `ul`, `li`, etc.)
+- **Layout Elements**: Use only `div` elements for layout containers - do NOT use semantic HTML tags like `header`, `section`, `main`, or `footer`
 - Apply styling exclusively through Tailwind CSS classes
 - No inline styles except for fixed dimensions when necessary
 - **Component Location**: The code must be placed in `Contents.tsx` file
