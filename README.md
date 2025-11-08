@@ -7,9 +7,60 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🤖 **AI-Powered Generation**: Uses Google Gemini (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
+- 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
 - 🖼️ **Iframe Rendering**: Generated HTML is safely rendered in an isolated iframe
 - ⚡ **Real-time Generation**: Fast UI generation with loading states and error handling
-- 🎯 **Clean Output**: Automatically strips markdown code blocks from AI responses
+- 🧹 **Clean Output**: Automatically strips markdown code blocks from AI responses
+- 🔄 **Follow-up Modifications**: Iteratively refine designs by modifying previous prompts with full conversation context
+- 📜 **Conversation History**: View all previous prompts in a history panel with the ability to modify and regenerate
+
+## User Stories
+
+### UI Generation
+
+- **As a** designer or developer, **I want to** describe a UI in natural language, **so that** I can quickly generate a visual mockup without writing code
+- **As a** user, **I want to** see a loading indicator while my UI is being generated, **so that** I know the system is processing my request
+- **As a** user, **I want to** generate UIs optimized for mobile screens (390px × 844px), **so that** I can create mobile-first designs
+- **As a** user, **I want to** generate UIs using Tailwind CSS, **so that** the generated mockups use modern, consistent styling
+
+### UI Modification
+
+- **As a** user, **I want to** modify an existing generated UI by describing changes, **so that** I can iteratively refine the design
+- **As a** user, **I want to** see my previous prompts displayed in a history panel, **so that** I can track the evolution of my design
+- **As a** user, **I want to** see my first prompt appear in the history panel immediately when I click "Create", **so that** I can see the conversation history right away
+- **As a** user, **I want to** click a "Modify" button to enter a new modification request, **so that** I can easily request changes
+- **As a** user, **I want to** cancel the modify flow by clicking away from an empty input field, **so that** I can easily exit edit mode
+- **As a** user, **I want to** send modification requests using keyboard shortcuts (Ctrl+Enter / Cmd+Enter), **so that** I can work efficiently
+
+### Display & Rendering
+
+- **As a** user, **I want to** see generated UIs rendered in an isolated iframe, **so that** the generated content doesn't affect the main application
+- **As a** user, **I want to** view generated UIs in a fixed-size container (390px × 844px), **so that** I can see how they appear on mobile devices
+- **As a** user, **I want to** see the generated UI immediately after generation completes, **so that** I can review the result without delay
+
+### User Interface
+
+- **As a** user, **I want to** enter my initial prompt in a centered textarea within the screen container, **so that** I can start generating UIs from a clean slate
+- **As a** user, **I want to** see a "Create" button with a magic icon below the prompt input, **so that** I can easily trigger UI generation
+- **As a** user, **I want to** see a prompt history panel appear immediately when I send my first prompt, **so that** I can see my conversation history right away
+- **As a** user, **I want to** see all my previous prompts displayed as read-only text in the history panel, **so that** I can reference my conversation history
+- **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
+- **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
+
+### Error Handling
+
+- **As a** user, **I want to** receive clear error messages if UI generation fails, **so that** I understand what went wrong
+- **As a** user, **I want to** be prevented from sending empty prompts, **so that** I don't waste API calls
+- **As a** user, **I want to** see disabled states on buttons during loading, **so that** I don't accidentally trigger duplicate requests
+
+### Technical Requirements
+
+- **As a** developer, **I want** generated HTML to be automatically cleaned of markdown code blocks, **so that** the HTML renders correctly in the iframe
+- **As a** developer, **I want** the system to maintain full conversation history (user prompts and assistant responses), **so that** modifications can be made with complete context
+- **As a** developer, **I want** the API to accept conversation history and format it properly for the LLM, **so that** follow-up modifications understand the full context
+- **As a** developer, **I want** the API to validate required environment variables, **so that** configuration errors are caught early
+- **As a** user, **I want** generated UIs to use Font Awesome icons via CDN, **so that** icons render correctly without additional setup
+- **As a** user, **I want** generated UIs to use Unsplash images, **so that** mockups include realistic placeholder images
 
 ## Tech Stack
 
@@ -17,10 +68,12 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **React**: 19.2.0
 - **TypeScript**: 5.x
 - **Styling**: Tailwind CSS 4
-- **AI Integration**: 
+- **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Google Gemini (`@ai-sdk/google`)
-- **Icons**: React Icons (FontAwesome)
+- **Icons**:
+  - React Icons (FontAwesome) - Used in the application UI
+  - Font Awesome 6.5.1 CDN - Used in generated UI mockups
 
 ## Project Structure
 
@@ -50,19 +103,21 @@ ui-gen/
 
 ### Prerequisites
 
-- Node.js 20+ 
+- Node.js 20+
 - npm, yarn, or pnpm
 - Google Gemini API key
 
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd ui-gen
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install
 # or
@@ -70,6 +125,7 @@ yarn install
 ```
 
 3. Create a `.env.local` file in the root directory:
+
 ```env
 GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 ```
@@ -77,6 +133,7 @@ GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 Get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
 
 4. Run the development server:
+
 ```bash
 npm run dev
 # or
@@ -87,10 +144,24 @@ yarn dev
 
 ## Usage
 
-1. Enter a description of the UI you want to generate in the prompt panel (positioned to the right of the screen)
-2. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the send button
-3. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
-4. The generated UI will be displayed in the 390px × 844px screen container
+### Initial Generation
+
+1. When the screen is empty, you'll see a centered prompt input field
+2. Enter a description of the UI you want to generate
+3. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
+4. The prompt will immediately appear in the history panel on the right
+5. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
+6. The generated UI will be displayed in the 390px × 844px screen container
+
+### Making Modifications
+
+1. After a UI is generated, you'll see a history panel on the right showing all your previous prompts
+2. Click the "Modify" button (ghost style, turns blue on hover) at the bottom of the history
+3. Enter your modification request in the "What you would like to change" field
+4. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
+5. The new modification prompt will be added to the history immediately
+6. The UI will be regenerated with the full conversation context, replacing the previous UI
+7. You can continue making modifications iteratively - each modification builds on the full conversation history
 
 ### Example Prompts
 
@@ -104,6 +175,7 @@ yarn dev
 ### Why Iframe?
 
 Generated HTML is rendered in an iframe for:
+
 - **Security**: Isolates generated content from the main application
 - **Styling Isolation**: Prevents generated styles from affecting the main app
 - **Clean Rendering**: Ensures the generated UI renders in a controlled 390px × 844px container
@@ -114,18 +186,40 @@ Generated HTML is rendered in an iframe for:
 - **Dynamic Content**: Works with dynamically generated HTML
 - **Easy Integration**: Simple script tag injection
 
+### Why Font Awesome CDN?
+
+- **Consistent Icons**: All generated UIs use the same icon library for visual consistency
+- **No Custom SVG**: Prevents AI from generating custom SVG icons, ensuring reliable rendering
+- **Easy Integration**: Simple CSS link tag injection in the iframe template
+- **Professional Look**: Font Awesome provides a comprehensive set of well-designed icons
+
 ### API Design
 
 The `/api/create` endpoint:
+
+- Accepts a conversation history array (user prompts and assistant responses)
 - Reads `docs/GENERATE_UI.md` as the system prompt
+- Formats the full conversation history for the LLM, including:
+  - Original user prompts
+  - Previous LLM-generated HTML outputs
+  - New modification requests
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
 - Cleans up markdown code blocks from AI responses
 - Returns clean HTML ready for iframe rendering
 
 ### Component Structure
 
-- **Screen.tsx**: Main container component managing state and API calls
-- **PromptPanel.tsx**: Reusable input component for user prompts
+- **Screen.tsx**: Main container component managing state, conversation history, and API calls
+  - Handles initial prompt input (centered in screen when empty)
+  - Manages conversation history state
+  - Renders generated UI in iframe
+  - Shows PromptPanel when history exists
+- **PromptPanel.tsx**: History panel component displaying conversation and modification interface
+  - Displays all user prompts as read-only text
+  - Provides "Modify" button to enter modification mode
+  - Shows modification input field with "Create" button when in edit mode
+  - Handles canceling edit mode when input field loses focus and is empty
+
 - Separation of concerns: UI generation logic in API route, rendering in components
 
 ## Development
@@ -157,6 +251,7 @@ The `/api/create` endpoint:
 ### AI Model Configuration
 
 The API endpoint uses:
+
 - Model: `gemini-2.5-flash`
 - Temperature: `0.5` (balanced creativity/consistency)
 
@@ -174,15 +269,15 @@ These can be adjusted in `src/app/api/create/route.ts`
 - [ ] Support for multiple screen sizes
 - [ ] Export generated UI as image or HTML file
 - [ ] Save/load generated UIs
-- [ ] History of generated UIs
+- [ ] Rollback to previous UI versions from history
 - [ ] Custom Tailwind configuration
 - [ ] Better error handling and user feedback
 - [ ] Streaming responses for faster perceived performance
+- [ ] Multiple conversation branches/screens
 
-## License
+## Rules
 
-[Add your license here]
-
-## Contributing
-
-[Add contribution guidelines here]
+- do not launch dev server yourself, ask user to do that instead
+- run `yarn lint` to check if the project builds
+- write notes to yourself in `docs/MEMORY.md`
+- run `yarn format` after you're done with the code

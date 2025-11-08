@@ -9,35 +9,41 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Key Architecture Decisions
 
 ### 1. Iframe Rendering
+
 - **Decision**: Use `srcDoc` to render generated HTML in an iframe
 - **Reason**: Security isolation and style containment
 - **Important**: Iframe sandbox must include `allow-scripts` for Tailwind CDN to work
 - **Location**: `src/components/Screen.tsx`
 
 ### 2. Tailwind CDN in Iframe
+
 - **Decision**: Use Tailwind CDN (`https://cdn.tailwindcss.com`) instead of compiled CSS
 - **Reason**: Dynamic content generation doesn't allow for build-time CSS compilation
 - **Gotcha**: Tailwind CDN may not always process classes correctly in iframes - we trigger a reflow to help
 - **Location**: `src/components/Screen.tsx` (HTML wrapper)
 
 ### 3. API Endpoint Structure
+
 - **Decision**: Single `/api/create` endpoint that reads system prompt from file
 - **Reason**: Keeps prompt management in markdown file, easier to update
 - **Important**: System prompt is read from `docs/GENERATE_UI.md` at runtime
 - **Location**: `src/app/api/create/route.ts`
 
 ### 4. HTML Cleanup
+
 - **Decision**: Strip markdown code blocks from AI responses
 - **Reason**: AI sometimes wraps output in ```html code blocks
 - **Implementation**: Regex patterns to remove leading/trailing backticks and "html" label
 - **Location**: `src/app/api/create/route.ts` (lines 42-55)
 
 ### 5. Component Separation
+
 - **Decision**: Separate `PromptPanel` component from `Screen` component
 - **Reason**: Reusability and separation of concerns
 - **Location**: `src/components/PromptPanel.tsx`
 
 ### 6. Loading State
+
 - **Decision**: Loading spinner only covers Screen component, not entire page
 - **Reason**: User can still see and interact with prompt panel during generation
 - **Location**: `src/components/Screen.tsx` (overlay inside Screen container)
@@ -45,6 +51,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Environment Variables
 
 ### Required
+
 - `GOOGLE_GENERATIVE_AI_API_KEY`: Google Gemini API key
   - The `@ai-sdk/google` package automatically reads this variable
   - No need to pass it explicitly to the `google()` function
@@ -53,6 +60,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Important Code Locations
 
 ### API Route
+
 - **File**: `src/app/api/create/route.ts`
 - **Key Functions**:
   - Reads `docs/GENERATE_UI.md` as system prompt
@@ -61,6 +69,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Returns `{ html: string }`
 
 ### Screen Component
+
 - **File**: `src/components/Screen.tsx`
 - **Key Features**:
   - Manages `input`, `htmlContent`, and `isLoading` state
@@ -69,6 +78,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
 
 ### Prompt Panel
+
 - **File**: `src/components/PromptPanel.tsx`
 - **Key Features**:
   - Multiline textarea (6 rows)
@@ -79,10 +89,12 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## System Prompt
 
 ### Location
+
 - **File**: `docs/GENERATE_UI.md`
 - **Purpose**: Defines how the AI should generate UI mockups
 
 ### Key Requirements (from prompt)
+
 - Generate ONLY page content (no `<!DOCTYPE>`, `<html>`, `<head>`, `<body>` tags)
 - Use HTML with `class` attribute (not JSX `className`)
 - Root element must be `<div class="flex h-full w-full">`
@@ -95,16 +107,19 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Known Issues & Workarounds
 
 ### 1. Tailwind CDN in Iframe
+
 - **Issue**: Tailwind CDN may not always process classes correctly in iframes
 - **Workaround**: Trigger a reflow by accessing `document.body.offsetHeight`
 - **Location**: `src/components/Screen.tsx` (script in HTML wrapper)
 
 ### 2. Markdown Code Blocks
+
 - **Issue**: AI sometimes wraps output in markdown code blocks
 - **Workaround**: Regex cleanup in API endpoint
 - **Location**: `src/app/api/create/route.ts`
 
 ### 3. Iframe Sandbox Restrictions
+
 - **Issue**: Scripts won't run without proper sandbox permissions
 - **Workaround**: Use `sandbox="allow-same-origin allow-scripts"`
 - **Location**: `src/components/Screen.tsx` (iframe element)
@@ -112,15 +127,18 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Dependencies
 
 ### Core
+
 - `next`: 16.0.0 - Framework
 - `react`: 19.2.0 - UI library
 - `typescript`: 5.x - Type safety
 
 ### AI
+
 - `ai`: ^4.0.0 - Vercel AI SDK
 - `@ai-sdk/google`: ^1.2.22 - Google Gemini provider
 
 ### Styling
+
 - `tailwindcss`: ^4 - CSS framework
 - `react-icons`: ^5.5.0 - Icon library
 
@@ -133,6 +151,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ## Component Props
 
 ### PromptPanel
+
 ```typescript
 interface PromptPanelProps {
   value: string;
@@ -145,6 +164,7 @@ interface PromptPanelProps {
 ## API Response Format
 
 ### Success
+
 ```json
 {
   "html": "<div class=\"flex h-full w-full\">...</div>"
@@ -152,6 +172,7 @@ interface PromptPanelProps {
 ```
 
 ### Error
+
 ```json
 {
   "error": "Error message"
@@ -200,4 +221,3 @@ interface PromptPanelProps {
 - Screen component is 390px × 844px - this is fixed and important for mobile mockups
 - PromptPanel is positioned absolutely relative to Screen component wrapper
 - Loading spinner only covers Screen, not the entire page
-

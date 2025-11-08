@@ -1,6 +1,6 @@
 export default function Contents() {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 text-center p-6">
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
       <span className="rounded-full bg-sky-500/10 px-3 py-1 text-sm font-medium text-sky-700 dark:bg-sky-500/20 dark:text-sky-200">
         Next.js + Tailwind
       </span>
@@ -15,4 +15,3 @@ export default function Contents() {
     </div>
   );
 }
-

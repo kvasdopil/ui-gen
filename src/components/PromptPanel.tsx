@@ -1,44 +1,102 @@
-import { FaPaperPlane } from "react-icons/fa";
+"use client";
+
+import { useState } from "react";
+import { FaEdit, FaMagic } from "react-icons/fa";
+
+type HistoryItem = {
+  type: "user" | "assistant";
+  content: string;
+};
 
 interface PromptPanelProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSend: () => void;
+  history: HistoryItem[];
+  onSend: (modificationPrompt: string) => void;
   isLoading: boolean;
 }
 
-export default function PromptPanel({
-  value,
-  onChange,
-  onSend,
-  isLoading,
-}: PromptPanelProps) {
+export default function PromptPanel({ history, onSend, isLoading }: PromptPanelProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+
+  // Filter to only show user prompts
+  const userPrompts = history.filter((item) => item.type === "user");
+
+  const handleModify = () => {
+    setIsEditing(true);
+    setEditValue("");
+  };
+
+  const handleCreate = () => {
+    if (!editValue.trim()) return;
+    onSend(editValue);
+    setIsEditing(false);
+    setEditValue("");
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      onSend();
+      handleCreate();
+    }
+  };
+
+  const handleBlur = () => {
+    // If the field is empty (after trimming), cancel the modify flow
+    if (!editValue.trim()) {
+      setIsEditing(false);
+      setEditValue("");
     }
   };
 
   return (
-    <div className="absolute -top-2 left-full ml-2 z-10 flex gap-2">
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={handleKeyPress}
-        placeholder="Describe the UI you want..."
-        rows={6}
-        className="w-48 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs shadow-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-        disabled={isLoading}
-      />
-      <button
-        onClick={onSend}
-        disabled={isLoading || !value.trim()}
-        className="flex h-8 w-8 items-center justify-center self-start rounded-lg bg-blue-500 text-white shadow-lg transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <FaPaperPlane className="text-xs" />
-      </button>
+    <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-y-auto">
+      <div className="flex flex-col gap-2">
+        {/* Display all user prompts as text with small gaps */}
+        {userPrompts.map((item, index) => (
+          <div
+            key={index}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+          >
+            {item.content}
+          </div>
+        ))}
+
+        {/* Modify button or edit form */}
+        {isEditing ? (
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+              What you would like to change
+            </label>
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={handleKeyPress}
+              onBlur={handleBlur}
+              placeholder="Describe the modification..."
+              rows={4}
+              className="w-full resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs shadow-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              disabled={isLoading}
+            />
+            <button
+              onClick={handleCreate}
+              disabled={isLoading || !editValue.trim()}
+              className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-xs text-white shadow-lg transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FaMagic />
+              <span>Create</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleModify}
+            disabled={isLoading}
+            className="flex items-center gap-2 self-start rounded-lg px-2 py-1 text-xs text-gray-600 transition-colors hover:text-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:text-blue-400"
+          >
+            <FaEdit className="text-xs" />
+            <span>Modify</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
-

@@ -19,7 +19,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hello World | Next.js Sample",
+  title: "UI generator",
   description: "A minimal Next.js + Tailwind starter powered by TypeScript.",
 };
 
@@ -30,7 +30,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${sourceSerif.variable} ${ibmPlexMono.variable} antialiased`}>{children}</body>
+      <body
+        className={`${inter.variable} ${sourceSerif.variable} ${ibmPlexMono.variable} antialiased`}
+      >
+        {children}
+      </body>
     </html>
   );
 }
