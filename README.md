@@ -4,6 +4,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 ## Features
 
+- 🔐 **OAuth Authentication**: Google OAuth authentication via Auth.js (NextAuth) - sign in with your Google account
+- 👤 **User Profile**: User avatar in top-right corner with profile menu showing name, email, and logout option
+- 🔒 **Protected API**: UI generation endpoint requires authenticated users
 - 🤖 **AI-Powered Generation**: Uses Google Gemini (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
@@ -115,6 +118,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **React**: 19.2.0
 - **TypeScript**: 5.x
 - **Styling**: Tailwind CSS 4
+- **Authentication**: Auth.js (NextAuth) v5 with Google OAuth provider
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Google Gemini (`@ai-sdk/google`)
@@ -123,6 +127,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **Icons**:
   - React Icons (FontAwesome) - Used in the application UI
   - Font Awesome 6.5.1 CDN - Used in generated UI mockups
+- **Deployment**: Vercel
 
 ## Project Structure
 
@@ -131,21 +136,28 @@ ui-gen/
 ├── src/
 │   ├── app/
 │   │   ├── api/
+│   │   │   ├── auth/
+│   │   │   │   └── [...nextauth]/
+│   │   │   │       └── route.ts     # Auth.js API route handlers
 │   │   │   └── create/
-│   │   │       └── route.ts          # API endpoint for UI generation
-│   │   ├── layout.tsx                # Root layout
+│   │   │       └── route.ts          # API endpoint for UI generation (protected)
+│   │   ├── layout.tsx                # Root layout with SessionProvider
 │   │   ├── page.tsx                  # Home page (viewport management)
 │   │   └── globals.css               # Global styles
 │   ├── components/
 │   │   ├── Screen.tsx                 # Individual screen component with iframe
 │   │   ├── PromptPanel.tsx            # History panel and modification interface
+│   │   ├── UserAvatar.tsx             # User avatar and authentication UI
+│   │   ├── Providers.tsx              # SessionProvider wrapper
 │   │   └── Contents.tsx              # Legacy component (example UI)
 │   ├── lib/
 │   │   ├── types.ts                  # TypeScript type definitions
 │   │   ├── storage.ts                # Storage abstraction (IndexedDB)
 │   │   └── utils.ts                  # Utility functions
-│   └── prompts/
-│       └── generate-ui.ts            # System prompt constant for AI generation
+│   ├── prompts/
+│   │   └── generate-ui.ts            # System prompt constant for AI generation
+│   └── types/
+│       └── next-auth.d.ts            # NextAuth type definitions
 ├── docs/
 │   └── MEMORY.md                     # Development notes and decisions
 └── package.json
@@ -181,12 +193,51 @@ yarn install
 ```env
 GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
+AUTH_SECRET=your_auth_secret_here
+AUTH_URL=http://localhost:3000
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
 ```
 
 Get your API keys from:
 
 - Google Gemini: [Google AI Studio](https://makersuite.google.com/app/apikey)
 - Unsplash: [Unsplash Developers](https://unsplash.com/developers) - Register as a developer and create a new application to get your Access Key
+
+### OAuth Setup
+
+1. **Create Google Cloud Project**:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+
+2. **Enable OAuth Consent Screen**:
+   - Navigate to **APIs & Services** > **OAuth consent screen**
+   - Choose **External** user type
+   - Fill in app information (name, support email, etc.)
+   - Add scopes: `email`, `profile`, `openid`
+   - Add test users if in testing mode
+
+3. **Create OAuth 2.0 Client**:
+   - Go to **APIs & Services** > **Credentials**
+   - Click **Create Credentials** > **OAuth client ID**
+   - Choose **Web application**
+   - Add authorized JavaScript origins:
+     - `http://localhost:3000` (for development)
+     - `https://your-production-domain.com` (for production)
+   - Add authorized redirect URIs:
+     - `http://localhost:3000/api/auth/callback/google` (for development)
+     - `https://your-production-domain.com/api/auth/callback/google` (for production)
+   - Copy the **Client ID** and **Client Secret**
+
+4. **Generate AUTH_SECRET**:
+   ```bash
+   openssl rand -base64 32
+   ```
+
+5. **Set Environment Variables**:
+   - Add `AUTH_SECRET` (from step 4)
+   - Add `AUTH_URL` (`http://localhost:3000` for local, `https://your-domain.com` for production)
+   - Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from step 3)
 
 4. Run the development server:
 
@@ -199,6 +250,15 @@ yarn dev
 5. Open [http://localhost:3000](http://localhost:3000) in your browser
 
 ## Usage
+
+### Authentication
+
+1. **Sign In**: Click the user avatar icon in the top-right corner
+2. **Google OAuth**: You'll be redirected to Google sign-in
+3. **Authorize**: Grant permissions to the application
+4. **Profile Menu**: After signing in, click the avatar to see your profile menu with name, email, and logout option
+
+**Note**: UI generation requires authentication. You must be signed in to create or modify screens.
 
 ### Initial Generation
 
@@ -312,6 +372,7 @@ Generated UIs include accessibility best practices:
 
 The `/api/create` endpoint:
 
+- **Requires Authentication**: Returns 401 Unauthorized if user is not authenticated
 - Accepts a conversation history array (user prompts and assistant responses)
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats the full conversation history for the LLM, including:
@@ -328,6 +389,22 @@ The `/api/create` endpoint:
 - Cleans up markdown code blocks from AI responses
 - Returns clean HTML ready for iframe rendering
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`) at the beginning
+
+### Authentication
+
+- **Auth.js Configuration**: `src/app/api/auth/[...nextauth]/route.ts`
+  - Google OAuth provider configuration
+  - JWT session strategy
+  - Callbacks to include user ID, name, email, and image in session
+- **UserAvatar Component**: `src/components/UserAvatar.tsx`
+  - Fixed position in top-right corner (not affected by viewport transforms)
+  - Shows default icon when not authenticated
+  - Shows Google profile image when authenticated
+  - Click handler: initiates sign-in if not authenticated, shows popup if authenticated
+  - Popup displays user name, email, and logout button
+  - Prevents event propagation to avoid interfering with viewport interactions
+- **SessionProvider**: `src/components/Providers.tsx`
+  - Wraps the app with Auth.js SessionProvider for client-side session access
 
 ### Component Structure
 
@@ -384,6 +461,41 @@ The `/api/create` endpoint:
 
 ## Development
 
+## Deployment
+
+### Deploying to Vercel
+
+1. **Install Vercel CLI**:
+   ```bash
+   npm i -g vercel
+   ```
+
+2. **Login to Vercel**:
+   ```bash
+   vercel login
+   ```
+
+3. **Deploy**:
+   ```bash
+   vercel --prod
+   ```
+
+4. **Set Environment Variables**:
+   - Go to Vercel project settings > Environment Variables
+   - Add all required environment variables (see Environment Variables section)
+   - **Important**: Set `AUTH_URL` to your production domain (e.g., `https://ui.guskov.dev`)
+   - **Important**: Ensure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` don't have trailing newlines (use `echo -n` when adding via CLI)
+
+5. **Configure Custom Domain**:
+   - Add your domain in Vercel project settings
+   - Configure DNS A record pointing to Vercel's IP (usually `76.76.21.21`)
+   - Vercel will automatically provision SSL certificate
+
+6. **Update OAuth Redirect URIs**:
+   - Add your production domain to Google Cloud Console OAuth client:
+     - Authorized JavaScript origins: `https://your-domain.com`
+     - Authorized redirect URIs: `https://your-domain.com/api/auth/callback/google`
+
 ### Available Scripts
 
 - `npm run dev` - Start development server
@@ -406,8 +518,19 @@ The `/api/create` endpoint:
 
 ### Environment Variables
 
-- `GOOGLE_GENERATIVE_AI_API_KEY`: Required. Your Google Gemini API key
-- `UNSPLASH_ACCESS_KEY`: Required. Your Unsplash API Access Key (get it from [Unsplash Developers](https://unsplash.com/developers))
+#### Required for Local Development
+
+- `GOOGLE_GENERATIVE_AI_API_KEY`: Your Google Gemini API key
+- `UNSPLASH_ACCESS_KEY`: Your Unsplash API Access Key (get it from [Unsplash Developers](https://unsplash.com/developers))
+- `AUTH_SECRET`: Secret key for session encryption (generate with `openssl rand -base64 32`)
+- `AUTH_URL`: Base URL for authentication (`http://localhost:3000` for local development)
+- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
+- `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
+
+#### Production (Vercel)
+
+Set these in Vercel project settings:
+- All the above variables with `AUTH_URL` set to your production domain (e.g., `https://ui.guskov.dev`)
 
 ### AI Model Configuration
 
@@ -420,6 +543,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 
 ## Limitations
 
+- **Authentication Required**: UI generation requires Google OAuth authentication
 - Generated UIs are **non-interactive** (no JavaScript, no event handlers)
 - Tailwind CDN is used (not recommended for production, but suitable for mockups)
 - Generated HTML is sanitized but should be reviewed for production use

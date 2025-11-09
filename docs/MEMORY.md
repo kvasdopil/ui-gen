@@ -135,7 +135,43 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Added warning log if screen not found during update (for debugging)
 - **Location**: `src/app/page.tsx`
 
-### 14. Duplicate API Call Prevention
+### 15. OAuth Authentication
+
+- **Decision**: Use Auth.js (NextAuth) v5 with Google OAuth provider
+- **Reason**: Secure authentication without managing user credentials, easy integration with Next.js
+- **Implementation**:
+  - Auth.js API route at `src/app/api/auth/[...nextauth]/route.ts`
+  - Google OAuth provider with JWT session strategy
+  - SessionProvider wrapper in `src/components/Providers.tsx`
+  - UserAvatar component in `src/components/UserAvatar.tsx`:
+    - Fixed position in top-right corner (z-index 9999)
+    - Not affected by viewport transforms (positioned outside viewport-content div)
+    - Shows default icon when not authenticated, Google profile image when authenticated
+    - Click handler: initiates sign-in if not authenticated, shows popup if authenticated
+    - Popup displays user name, email, and logout button
+    - Prevents event propagation to avoid interfering with viewport interactions
+  - Protected `/api/create` endpoint requires authenticated session
+  - Type definitions in `src/types/next-auth.d.ts` for TypeScript support
+- **Configuration**:
+  - OAuth consent screen must be configured in Google Cloud Console
+  - OAuth client must have authorized redirect URIs for both localhost and production
+  - Environment variables: `AUTH_SECRET`, `AUTH_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- **Location**: `src/app/api/auth/[...nextauth]/route.ts`, `src/components/UserAvatar.tsx`, `src/components/Providers.tsx`, `src/app/api/create/route.ts`
+
+### 16. Deployment to Vercel
+
+- **Decision**: Deploy to Vercel with custom domain support
+- **Implementation**:
+  - Vercel CLI for deployment and environment variable management
+  - Custom domain configuration via Vercel dashboard
+  - DNS A record pointing to Vercel IP (76.76.21.21)
+  - Automatic SSL certificate provisioning
+  - Environment variables set in Vercel project settings
+  - **Important**: Ensure OAuth client credentials don't have trailing newlines when setting via CLI
+- **Gotcha**: OAuth redirect URIs must match exactly (including protocol and path)
+- **Location**: Vercel project configuration, DNS settings
+
+### 17. Duplicate API Call Prevention
 
 - **Decision**: Use screen ID + timestamp for generation key and reuse existing incomplete points
 - **Reason**:
@@ -157,6 +193,19 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - The `@ai-sdk/google` package automatically reads this variable
   - No need to pass it explicitly to the `google()` function
   - Get key from: https://makersuite.google.com/app/apikey
+- `UNSPLASH_ACCESS_KEY`: Unsplash API Access Key
+  - Get from: https://unsplash.com/developers
+- `AUTH_SECRET`: Secret key for session encryption
+  - Generate with: `openssl rand -base64 32`
+  - Required for Auth.js session management
+- `AUTH_URL`: Base URL for authentication
+  - Local development: `http://localhost:3000`
+  - Production: `https://your-domain.com`
+- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
+  - Get from Google Cloud Console > APIs & Services > Credentials
+- `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
+  - Get from Google Cloud Console > APIs & Services > Credentials
+  - **Important**: When setting via Vercel CLI, use `echo -n` to avoid trailing newlines
 
 ## Important Code Locations
 
@@ -164,10 +213,37 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/app/api/create/route.ts`
 - **Key Functions**:
+  - **Requires Authentication**: Checks for authenticated session using `auth()` from Auth.js
+  - Returns 401 Unauthorized if no session exists
   - Imports `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
   - Uses `gemini-2.5-flash` model with temperature 0.5
   - Cleans markdown code blocks from response
   - Returns `{ html: string }` with title metadata comment (`<!-- Title: ... -->`)
+
+### Authentication
+
+- **File**: `src/app/api/auth/[...nextauth]/route.ts`
+- **Key Features**:
+  - Google OAuth provider configuration
+  - JWT session strategy
+  - Callbacks to include user ID, name, email, and image in session
+  - Exports `handlers`, `signIn`, `signOut`, and `auth` functions
+  - `trustHost: true` to allow custom hosts (localhost, etc.)
+
+### UserAvatar Component
+
+- **File**: `src/components/UserAvatar.tsx`
+- **Key Features**:
+  - Uses `useSession` hook from `next-auth/react` to get session data
+  - Fixed position in top-right corner (`fixed top-4 right-4 z-[9999]`)
+  - Not affected by viewport transforms (positioned outside viewport-content div)
+  - Shows default icon (`FaUserCircle`) when not authenticated
+  - Shows Google profile image when authenticated (using Next.js Image component)
+  - Click handler: initiates sign-in if not authenticated, shows popup if authenticated
+  - Popup displays user name, email, and logout button
+  - Prevents event propagation (onMouseDown, onMouseMove, onMouseUp, onClick) to avoid interfering with viewport
+  - Uses `cursor-default` on popup menu to override viewport cursor
+  - Closes popup when clicking outside
 
 ### Screen Component
 
@@ -411,3 +487,6 @@ interface PromptPanelProps {
 - Camera persistence: Viewport transform is persisted to IndexedDB in `viewportTransform` object store with key `"current"`
 - New screen creation: Two-click behavior - first click deselects, second click shows form (prevents accidental form triggers)
 - Conversation points: Incomplete points are replaced (not duplicated) when generation completes; modification prompts appear immediately in history
+- OAuth authentication: UserAvatar component in top-right corner; `/api/create` endpoint requires authenticated session; Auth.js v5 with Google OAuth provider
+- UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference
+- OAuth environment variables: Must not have trailing newlines when setting via Vercel CLI (use `echo -n`); `AUTH_URL` must match production domain exactly
