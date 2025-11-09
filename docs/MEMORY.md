@@ -51,11 +51,14 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ### 7. Data Persistence
 
 - **Decision**: Use IndexedDB for client-side persistence with abstraction layer
-- **Reason**: Persist screens, conversations, and generated content without backend dependency
+- **Reason**: Persist screens, conversations, generated content, and camera position/zoom without backend dependency
 - **Implementation**: 
   - Storage abstraction interface in `src/lib/storage.ts`
   - `IdbStorage` class implementing IndexedDB operations
   - Auto-save on screen changes, auto-load on mount
+  - Auto-save viewport transform (camera position and zoom) with 500ms debounce to avoid excessive writes
+  - Auto-load viewport transform on mount
+  - Database version: 2 (upgraded from 1 to add viewportTransform object store)
   - Easy to swap for backend persistence later (just implement Storage interface)
 - **Location**: `src/lib/storage.ts`, `src/lib/types.ts`
 
@@ -71,7 +74,48 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Decision**: No auto-selection or auto-centering when creating screens
 - **Reason**: Prevents viewport disruption when creating multiple screens quickly
 - **Z-Index**: Newer screens appear above older ones; selected screens always on top
+- **Two-Click Behavior**: First click on empty space deselects current screen, second click (when no screen selected) shows new screen form
+- **Implementation**: Track `hadSelectedScreen` in `handleMouseDown` to determine if popup should appear
 - **Location**: `src/app/page.tsx`
+
+### 10. Draggable Screens
+
+- **Decision**: Allow unselected screens to be dragged for repositioning
+- **Reason**: Enables spatial organization of screens without requiring selection
+- **Implementation**:
+  - Track `draggedScreenId` and `isDraggingScreen` state to distinguish between click and drag
+  - Only mark as dragging after mouse moves >5px to allow clicks to select
+  - Prevent viewport panning as soon as `draggedScreenId` is set (even before 5px threshold)
+  - Update screen position in content coordinates, accounting for viewport scale
+  - Selected screens remain non-draggable to allow interaction with their content
+  - Deselect current screen when starting to drag another screen
+  - Prevent selection if user dragged (not just clicked)
+- **Location**: `src/app/page.tsx`
+
+### 11. Camera Position Persistence
+
+- **Decision**: Persist viewport transform (position and zoom) to IndexedDB
+- **Reason**: Users expect to continue from where they left off when reloading the page
+- **Implementation**:
+  - Added `ViewportTransform` type with `x`, `y`, `scale` properties
+  - Added `viewportTransform` object store to IndexedDB schema
+  - Save viewport transform with 500ms debounce to avoid excessive writes during panning/zooming
+  - Load viewport transform on mount alongside screens
+  - Track `isLoadingViewport` state to prevent saving during initial load
+- **Location**: `src/lib/storage.ts`, `src/app/page.tsx`
+
+### 12. Conversation Point Management
+
+- **Decision**: Replace incomplete conversation points instead of duplicating them, and show prompts immediately in history
+- **Reason**: 
+  - Prevents duplicate prompts in history when creating new screens
+  - Provides better UX by showing modification prompts immediately while generation is in progress
+- **Implementation**:
+  - When creating new screen: initial incomplete point is replaced with completed point after generation
+  - When sending modification: add incomplete point immediately to history, replace with completed point when generation finishes
+  - If generation fails: remove the incomplete point to keep history clean
+  - Check if last point matches prompt and is incomplete before replacing (prevents duplicates)
+- **Location**: `src/components/Screen.tsx`
 
 ## Environment Variables
 
@@ -103,6 +147,10 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Injects Tailwind CDN and helper scripts
   - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
   - Auto-starts generation when screen has conversation point without HTML
+  - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts)
+  - Adds modification prompts to history immediately (before API response) for better UX
+  - Replaces incomplete points with completed ones when generation finishes
+  - Removes incomplete points if generation fails
   - Uses `generationInProgressRef` to prevent duplicate API calls
   - Displays "No content" message when screen has no HTML
   - Shows PromptPanel only when screen is selected
@@ -122,13 +170,16 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/lib/storage.ts`
 - **Key Features**:
-  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens` methods
+  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform` methods
   - `IdbStorage` class implementing IndexedDB operations
   - Uses `idb` package for IndexedDB wrapper
-  - Database name: `ui-gen-db`, version: 1
-  - Object store: `screens` with key `"all"` storing array of ScreenData
+  - Database name: `ui-gen-db`, version: 2 (upgraded from 1 to add viewportTransform store)
+  - Object stores:
+    - `screens` with key `"all"` storing array of ScreenData
+    - `viewportTransform` with key `"current"` storing ViewportTransform
   - Auto-saves screens whenever they change
-  - Auto-loads screens on mount
+  - Auto-saves viewport transform with 500ms debounce
+  - Auto-loads screens and viewport transform on mount
   - Easy to swap for backend persistence (just implement Storage interface)
 
 ### Types
@@ -137,6 +188,9 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Key Types**:
   - `ConversationPoint`: `{ prompt: string, html: string, title: string | null, timestamp: number }`
   - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number } }`
+- **File**: `src/lib/storage.ts`
+- **Key Types**:
+  - `ViewportTransform`: `{ x: number, y: number, scale: number }` - Camera position and zoom level
 
 ## System Prompt
 
@@ -240,7 +294,9 @@ interface PromptPanelProps {
 
 ## Development Workflow
 
-1. User clicks empty space to create new screen
+### Creating New Screen
+
+1. User clicks empty space (first click deselects if screen selected, second click shows form)
 2. Floating form appears at click location
 3. User enters prompt and clicks "Create"
 4. Screen is created with initial conversation point (prompt, no HTML yet)
@@ -253,6 +309,7 @@ interface PromptPanelProps {
    - Returns HTML with title metadata comment
 7. `Screen` component:
    - Extracts title from HTML metadata (`<!-- Title: ... -->`)
+   - Replaces the incomplete conversation point with completed one (prevents duplicate)
    - Updates conversation point with HTML and title
    - Displays title above the screen
    - Wraps HTML with document structure
@@ -260,8 +317,17 @@ interface PromptPanelProps {
    - Sets `srcDoc` on iframe
 8. Screen data is automatically saved to IndexedDB
 9. Iframe renders the generated UI
-10. User can click prompts in history panel to view different versions
-11. User can click "Modify" to add new conversation points
+
+### Making Modifications
+
+1. User selects a screen to see prompt history panel
+2. User clicks "Modify" button
+3. User enters modification request and clicks "Create"
+4. `Screen` component immediately adds incomplete conversation point to history (prompt appears right away)
+5. API call is made with full conversation history
+6. When API response arrives, incomplete point is replaced with completed point
+7. If API call fails, incomplete point is removed from history
+8. User can click prompts in history panel to view different versions
 
 ## Testing Considerations
 
@@ -298,8 +364,14 @@ interface PromptPanelProps {
 - Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
 - Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - can be swapped for backend easily
 - Screens are auto-saved to IndexedDB on every change, auto-loaded on mount
+- Viewport transform (camera position and zoom) is auto-saved with 500ms debounce, auto-loaded on mount
 - New screens are NOT auto-selected or auto-centered to prevent viewport disruption
 - Z-index: Newer screens appear above older ones; selected screens always on top
 - Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations
 - Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
 - No default screen - page starts empty, user clicks to create first screen
+- Screen dragging: Unselected screens can be dragged; panning is disabled during drag; selected screens are non-draggable
+- Drag detection: Only mark as dragging after >5px movement to allow clicks to select; prevent panning as soon as `draggedScreenId` is set
+- Camera persistence: Viewport transform is persisted to IndexedDB in `viewportTransform` object store with key `"current"`
+- New screen creation: Two-click behavior - first click deselects, second click shows form (prevents accidental form triggers)
+- Conversation points: Incomplete points are replaced (not duplicated) when generation completes; modification prompts appear immediately in history

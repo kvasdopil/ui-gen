@@ -1,10 +1,20 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import type { ScreenData } from "./types";
 
+export type ViewportTransform = {
+  x: number;
+  y: number;
+  scale: number;
+};
+
 interface UIDatabase extends DBSchema {
   screens: {
     key: string;
     value: ScreenData[];
+  };
+  viewportTransform: {
+    key: string;
+    value: ViewportTransform;
   };
 }
 
@@ -12,11 +22,13 @@ export interface Storage {
   saveScreens(screens: ScreenData[]): Promise<void>;
   loadScreens(): Promise<ScreenData[]>;
   clearScreens(): Promise<void>;
+  saveViewportTransform(transform: ViewportTransform): Promise<void>;
+  loadViewportTransform(): Promise<ViewportTransform | null>;
 }
 
 class IdbStorage implements Storage {
   private dbName = "ui-gen-db";
-  private dbVersion = 1;
+  private dbVersion = 2;
   private db: IDBPDatabase<UIDatabase> | null = null;
 
   private async getDB(): Promise<IDBPDatabase<UIDatabase>> {
@@ -28,6 +40,9 @@ class IdbStorage implements Storage {
       upgrade(db) {
         if (!db.objectStoreNames.contains("screens")) {
           db.createObjectStore("screens");
+        }
+        if (!db.objectStoreNames.contains("viewportTransform")) {
+          db.createObjectStore("viewportTransform");
         }
       },
     });
@@ -63,6 +78,27 @@ class IdbStorage implements Storage {
     } catch (error) {
       console.error("Error clearing screens from IndexedDB:", error);
       throw error;
+    }
+  }
+
+  async saveViewportTransform(transform: ViewportTransform): Promise<void> {
+    try {
+      const db = await this.getDB();
+      await db.put("viewportTransform", transform, "current");
+    } catch (error) {
+      console.error("Error saving viewport transform to IndexedDB:", error);
+      throw error;
+    }
+  }
+
+  async loadViewportTransform(): Promise<ViewportTransform | null> {
+    try {
+      const db = await this.getDB();
+      const transform = await db.get("viewportTransform", "current");
+      return transform || null;
+    } catch (error) {
+      console.error("Error loading viewport transform from IndexedDB:", error);
+      return null;
     }
   }
 }

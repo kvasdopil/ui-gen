@@ -18,11 +18,13 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
 - ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
-- 💾 **Persistent Storage**: All screens, conversations, and generated content are automatically saved to IndexedDB
+- 💾 **Persistent Storage**: All screens, conversations, generated content, and camera position/zoom are automatically saved to IndexedDB
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
-- 🖱️ **Selectable Screens**: Click any screen to select it, center it, and zoom to 100%
+- 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
 - 🎨 **Visual Selection**: Selected screens display a 2px blue border
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
+- 🖱️ **Draggable Screens**: Drag unselected screens to reposition them; panning is disabled during screen drag
+- 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 
 ## User Stories
@@ -51,15 +53,18 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** pan the viewport by dragging empty space, **so that** I can navigate around multiple screens
 - **As a** user, **I want to** zoom the viewport using scroll (10% to 100%), **so that** I can see screens at different scales
 - **As a** user, **I want to** click a screen to select it, **so that** I can interact with it and see its prompt panel
-- **As a** user, **I want to** have selected screens automatically centered and zoomed to 100%, **so that** I can focus on the selected screen
+- **As a** user, **I want to** drag unselected screens to reposition them, **so that** I can organize my screens spatially
+- **As a** user, **I want** panning to be disabled when dragging a screen, **so that** I can move screens without accidentally panning the viewport
+- **As a** user, **I want** selected screens to remain non-draggable, **so that** I can interact with them without accidentally moving them
 - **As a** user, **I want to** see a visual indicator (blue border) on selected screens, **so that** I know which screen is active
 - **As a** user, **I want to** click outside screens to deselect them, **so that** I can pan and zoom without interference
 - **As a** user, **I want to** see the prompt panel only when a screen is selected, **so that** the interface stays clean when no screen is active
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
+- **As a** user, **I want** my camera position and zoom level to be saved, **so that** I can continue from where I left off when I reload the page
 
 ### User Interface
 
-- **As a** user, **I want to** click anywhere on empty space to create a new screen, **so that** I can quickly add new screens at specific locations
+- **As a** user, **I want to** click on empty space twice to create a new screen (first click deselects, second shows form), **so that** I can easily deselect screens without accidentally triggering the creation form
 - **As a** user, **I want to** see a floating form appear at the click location when creating a new screen, **so that** I can enter the prompt for the new screen
 - **As a** user, **I want to** have my input preserved if I cancel the new screen form, **so that** I don't lose my work if I click outside accidentally
 - **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
@@ -70,6 +75,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** browse through output history by clicking different prompts, **so that** I can compare different versions of the generated UI
 - **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
 - **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
+- **As a** user, **I want** my modification prompts to appear in history immediately when I send them, **so that** I can see what I requested while the UI is being generated
 - **As a** user, **I want to** have my screens automatically saved, **so that** I don't lose my work when I refresh the page
 
 ### Error Handling
@@ -84,7 +90,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** developer, **I want** the system to maintain full conversation history (user prompts and assistant responses), **so that** modifications can be made with complete context
 - **As a** developer, **I want** the API to accept conversation history and format it properly for the LLM, **so that** follow-up modifications understand the full context
 - **As a** developer, **I want** the API to validate required environment variables, **so that** configuration errors are caught early
-- **As a** developer, **I want** all screens and conversation data to be persisted in IndexedDB, **so that** users don't lose their work
+- **As a** developer, **I want** all screens, conversation data, and camera position/zoom to be persisted in IndexedDB, **so that** users don't lose their work
 - **As a** user, **I want** generated UIs to use Font Awesome icons via CDN, **so that** icons render correctly without additional setup
 - **As a** user, **I want** generated UIs to use Unsplash images, **so that** mockups include realistic placeholder images
 
@@ -187,21 +193,24 @@ yarn dev
 
 ### Creating New Screens
 
-1. **Click on Empty Space**: Click anywhere on empty space (not on an existing screen) to initiate the new screen flow
-2. **Enter Prompt**: A floating form will appear at the click location with a "What you want to create" input field
-3. **Create Screen**: Enter your prompt and click the "Create" button - a new screen will be created at that location and start generating immediately
-4. **Cancel**: Click outside the form to cancel (your input will be preserved for the next attempt)
-5. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
+1. **Deselect First**: If a screen is selected, click on empty space once to deselect it
+2. **Click Again to Create**: Click on empty space again (when no screen is selected) to show the new screen form
+3. **Enter Prompt**: A floating form will appear at the click location with a "What you want to create" input field
+4. **Create Screen**: Enter your prompt and click the "Create" button - a new screen will be created at that location and start generating immediately
+5. **Cancel**: Click outside the form to cancel (your input will be preserved for the next attempt)
+6. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
 
 ### Navigating Multiple Screens
 
 1. **Panning**: Press and drag on empty space to pan around the viewport
 2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale)
-3. **Selecting Screens**: Click any screen to select it - it will be centered and zoomed to 100%
-4. **Visual Feedback**: Selected screens display a 2px blue border and appear on top
-5. **Deselecting**: Click on empty space to deselect the current screen
-6. **Prompt Panel**: The prompt history panel only appears when a screen is selected
-7. **Z-Index**: Newer screens appear above older ones; selected screens always appear on top
+3. **Selecting Screens**: Click any screen to select it and view its prompt panel
+4. **Dragging Screens**: Click and drag unselected screens to reposition them; panning is automatically disabled during screen drag
+5. **Visual Feedback**: Selected screens display a 2px blue border and appear on top; unselected screens show a grab cursor
+6. **Deselecting**: Click on empty space to deselect the current screen
+7. **Prompt Panel**: The prompt history panel only appears when a screen is selected
+8. **Z-Index**: Newer screens appear above older ones; selected screens always appear on top
+9. **Camera Persistence**: Your camera position and zoom level are automatically saved and restored when you reload the page
 
 ### Viewing Output History
 
@@ -217,11 +226,12 @@ yarn dev
 2. Click the "Modify" button (ghost style, turns blue on hover) at the bottom of the history
 3. Enter your modification request in the "What you would like to change" field
 4. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
-5. The new modification prompt will be added to the history immediately
-6. The UI will be regenerated with the full conversation context, updating the selected screen
-7. The newly created prompt will be automatically selected, showing its output
-8. You can continue making modifications iteratively - each modification builds on the full conversation history
-9. Each screen maintains its own independent conversation history
+5. The new modification prompt will be added to the history immediately (before generation completes)
+6. A loading spinner will appear while the UI is being regenerated
+7. Once generation completes, the prompt will be updated with the generated HTML
+8. The newly created prompt will be automatically selected, showing its output
+9. You can continue making modifications iteratively - each modification builds on the full conversation history
+10. Each screen maintains its own independent conversation history
 
 ### Example Prompts
 
@@ -270,18 +280,19 @@ The `/api/create` endpoint:
 
 ### Component Structure
 
-- **page.tsx**: Main viewport component managing multiple screens, pan/zoom, and selection
+- **page.tsx**: Main viewport component managing multiple screens, pan/zoom, selection, and dragging
   - Manages viewport transform state (pan position and zoom scale)
   - Handles panning via mouse press and drag on empty space
   - Handles zooming via mouse wheel (10% to 100%) with non-passive event listener
   - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
-  - Centers and zooms selected screens to 100% (works correctly at all zoom levels)
-  - Deselects screens when clicking outside
-  - Provides new screen creation flow: clicking empty space shows a form, clicking Create creates a screen at that location
+  - Handles screen dragging: unselected screens can be dragged to reposition them
+  - Disables panning when dragging a screen to prevent interference
+  - Deselects screens when clicking outside or starting to drag another screen
+  - Provides new screen creation flow: first click on empty space deselects current screen, second click (when no screen selected) shows form
   - Preserves form input when canceling the new screen flow
-  - Auto-loads screens from IndexedDB on mount
-  - Auto-saves screens to IndexedDB whenever they change
+  - Auto-loads screens and viewport transform from IndexedDB on mount
+  - Auto-saves screens and viewport transform to IndexedDB whenever they change (viewport transform is debounced by 500ms)
   - Z-index management: newer screens appear above older ones, selected screens always on top
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Manages conversation points state (prompt, HTML, title, timestamp for each point)
@@ -289,6 +300,10 @@ The `/api/create` endpoint:
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
   - Automatically starts generation when created with initial conversation point (for new screens from form)
+  - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts in history)
+  - Adds modification prompts to history immediately (before API response) for better UX
+  - Replaces incomplete points with completed ones when generation finishes
+  - Removes incomplete points if generation fails
   - Uses ref to prevent duplicate API calls
   - Shows PromptPanel only when screen is selected
   - Handles screen click events for selection
@@ -346,7 +361,10 @@ These can be adjusted in `src/app/api/create/route.ts`
 - Generated HTML is sanitized but should be reviewed for production use
 - Screen size is fixed at 390px × 844px (mobile only)
 - Zoom is limited to 10% to 100% scale
-- Unselected screens ignore mouse events (except for selection clicks) to allow panning
+- Unselected screens can be dragged to reposition them
+- Panning is automatically disabled when dragging a screen
+- Selected screens are non-draggable to allow interaction with their content
+- Camera position and zoom are persisted and restored on page reload
 - New screen form appears on mouse release (not mouse down) to prevent accidental triggers while dragging
 
 ## Future Improvements
@@ -359,6 +377,8 @@ These can be adjusted in `src/app/api/create/route.ts`
 - [x] Pan and zoom viewport
 - [x] Selectable screens with visual feedback
 - [x] New screen creation flow with positioned screens
+- [x] Draggable screens for repositioning
+- [x] Camera position and zoom persistence
 - [ ] Custom Tailwind configuration
 - [ ] Better error handling and user feedback
 - [ ] Streaming responses for faster perceived performance

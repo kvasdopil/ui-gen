@@ -9,13 +9,19 @@ import { storage } from "@/lib/storage";
 export default function Home() {
   const [screens, setScreens] = useState<ScreenData[]>([]);
   const [isLoadingScreens, setIsLoadingScreens] = useState(true);
+  const [isLoadingViewport, setIsLoadingViewport] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [viewportTransform, setViewportTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const viewportSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [clickPosition, setClickPosition] = useState<{ x: number; y: number } | null>(null);
   const [wasEmptySpaceClick, setWasEmptySpaceClick] = useState(false);
+  const [draggedScreenId, setDraggedScreenId] = useState<string | null>(null);
+  const [screenDragStart, setScreenDragStart] = useState({ x: 0, y: 0, screenX: 0, screenY: 0 });
+  const [isDraggingScreen, setIsDraggingScreen] = useState(false);
+  const justFinishedDraggingRef = useRef<string | null>(null);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
   const [newScreenInput, setNewScreenInput] = useState("");
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
@@ -31,25 +37,60 @@ export default function Home() {
       return;
     }
 
-    // Check if clicking on a screen container (screens stop propagation, so this should only be true for empty space)
-    const screenContainer = target.closest("[data-screen-container]");
+    // Check if clicking on a screen container
+    const screenContainer = target.closest("[data-screen-container]") as HTMLElement | null;
+    
+    // If clicking on a screen container, check if it's unselected
+    if (screenContainer) {
+      const screenId = screenContainer.id;
+      const screen = screens.find((s) => s.id === screenId);
+      
+      // Only allow dragging if screen is not selected
+      if (screen && screen.id !== selectedScreenId) {
+        // Deselect current screen when starting to drag another screen
+        setSelectedScreenId(null);
+        
+        // Set up potential screen drag (but don't mark as dragging yet)
+        const rect = viewportRef.current?.getBoundingClientRect();
+        if (rect && screen.position) {
+          // Store initial mouse position and screen position
+          setScreenDragStart({
+            x: e.clientX,
+            y: e.clientY,
+            screenX: screen.position.x,
+            screenY: screen.position.y,
+          });
+          setDraggedScreenId(screenId);
+          setIsDraggingScreen(false); // Not dragging yet, just potential
+          setIsMouseDown(true);
+        }
+        return;
+      }
+      // If screen is selected, let it handle the click (don't drag)
+      return;
+    }
 
     // Check if clicking within viewport but not on a screen
     const isWithinViewport = viewportRef.current?.contains(target);
     const isEmptySpace = isWithinViewport && !screenContainer;
 
     if (isEmptySpace) {
+      // Store whether a screen was selected before we deselect (for popup logic)
+      const hadSelectedScreen = selectedScreenId !== null;
+      
       // Unselect screen when clicking on empty space
       setSelectedScreenId(null);
 
       // Store click position and that it was empty space for handling on mouse up
+      // Only show popup if no screen was selected (not if we just deselected one)
       const rect = viewportRef.current?.getBoundingClientRect();
       if (rect) {
         setClickPosition({
           x: e.clientX - rect.left,
           y: e.clientY - rect.top,
         });
-        setWasEmptySpaceClick(true);
+        // Only mark as empty space click if no screen was selected (allows popup on second click)
+        setWasEmptySpaceClick(!hadSelectedScreen);
       }
 
       // Set drag start position for potential dragging
@@ -69,6 +110,44 @@ export default function Home() {
     // Only handle dragging if mouse button is pressed
     if (!isMouseDown) return;
 
+    // Handle screen dragging
+    if (draggedScreenId) {
+      const screen = screens.find((s) => s.id === draggedScreenId);
+      if (screen && screen.position) {
+        // Calculate mouse movement delta in viewport coordinates
+        const deltaX = e.clientX - screenDragStart.x;
+        const deltaY = e.clientY - screenDragStart.y;
+        
+        // Check if mouse moved significantly (more than 5px) to consider it a drag
+        const movedSignificantly = Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5;
+        
+        if (movedSignificantly && !isDraggingScreen) {
+          // User started dragging the screen
+          setIsDraggingScreen(true);
+        }
+        
+        // Only update position if we're actually dragging
+        if (isDraggingScreen) {
+          // Convert delta to content coordinates (accounting for scale)
+          const contentDeltaX = deltaX / viewportTransform.scale;
+          const contentDeltaY = deltaY / viewportTransform.scale;
+          
+          // Calculate new screen position
+          const newX = screenDragStart.screenX + contentDeltaX;
+          const newY = screenDragStart.screenY + contentDeltaY;
+          
+          // Update screen position
+          handleScreenUpdate(draggedScreenId, {
+            position: { x: newX, y: newY },
+          });
+        }
+      }
+      // Prevent panning as soon as we have a draggedScreenId (even before 5px threshold)
+      // This prevents viewport panning from interfering with screen drag
+      return; // Don't handle panning when potentially dragging a screen
+    }
+
+    // Handle viewport panning (only if not dragging a screen)
     // Check if user started dragging (mouse moved significantly from initial click)
     const deltaX = Math.abs(e.clientX - (dragStart.x + viewportTransform.x));
     const deltaY = Math.abs(e.clientY - (dragStart.y + viewportTransform.y));
@@ -97,12 +176,13 @@ export default function Home() {
       if (newScreenFormRef.current?.contains(target)) {
         setIsDragging(false);
         setIsMouseDown(false);
+        setDraggedScreenId(null);
         return;
       }
     }
 
     // If user didn't drag and clicked on empty space, initiate new screen flow
-    if (!isDragging && wasEmptySpaceClick && clickPosition) {
+    if (!isDragging && !draggedScreenId && wasEmptySpaceClick && clickPosition) {
       // If not already in new screen mode, initiate it
       if (!isNewScreenMode) {
         setNewScreenPosition(clickPosition);
@@ -113,9 +193,26 @@ export default function Home() {
       }
     }
 
+    // Handle screen click vs drag
+    if (draggedScreenId) {
+      if (isDraggingScreen) {
+        // User dragged the screen - prevent selection
+        justFinishedDraggingRef.current = draggedScreenId;
+        // Clear after a short delay to allow click handler to check
+        setTimeout(() => {
+          justFinishedDraggingRef.current = null;
+        }, 100);
+      } else {
+        // User just clicked (didn't drag) - select the screen
+        handleScreenClick(draggedScreenId);
+      }
+    }
+
     // Reset drag and click tracking
     setIsDragging(false);
     setIsMouseDown(false);
+    setIsDraggingScreen(false);
+    setDraggedScreenId(null);
     setClickPosition(null);
     setWasEmptySpaceClick(false);
   };
@@ -156,83 +253,83 @@ export default function Home() {
     };
   }, [handleWheel]);
 
-  // Center and zoom to 100% when a screen is selected
-  const centerAndZoomScreen = useCallback(
-    (screenId: string) => {
-      // Use requestAnimationFrame to ensure DOM is updated
-      requestAnimationFrame(() => {
-        const screenElement = document.getElementById(screenId);
-        if (screenElement && viewportRef.current) {
-          const viewportRect = viewportRef.current.getBoundingClientRect();
+  // Center and zoom to 100% when a screen is selected - DISABLED
+  // const centerAndZoomScreen = useCallback(
+  //   (screenId: string) => {
+  //     // Use requestAnimationFrame to ensure DOM is updated
+  //     requestAnimationFrame(() => {
+  //       const screenElement = document.getElementById(screenId);
+  //       if (screenElement && viewportRef.current) {
+  //         const viewportRect = viewportRef.current.getBoundingClientRect();
 
-          // Find the screen data to get its position in content coordinates
-          const screen = screens.find((s) => s.id === screenId);
+  //         // Find the screen data to get its position in content coordinates
+  //         const screen = screens.find((s) => s.id === screenId);
 
-          let screenCenterXContent: number;
-          let screenCenterYContent: number;
+  //         let screenCenterXContent: number;
+  //         let screenCenterYContent: number;
 
-          if (screen?.position) {
-            // Use stored position
-            screenCenterXContent = screen.position.x;
-            screenCenterYContent = screen.position.y;
-          } else {
-            // Fallback: get position from DOM (for initial screen or screens without position)
-            const screenRect = screenElement.getBoundingClientRect();
+  //         if (screen?.position) {
+  //           // Use stored position
+  //           screenCenterXContent = screen.position.x;
+  //           screenCenterYContent = screen.position.y;
+  //         } else {
+  //           // Fallback: get position from DOM (for initial screen or screens without position)
+  //           const screenRect = screenElement.getBoundingClientRect();
 
-            // Get current transform from state
-            setViewportTransform((currentTransform) => {
-              // Convert from viewport coordinates to content coordinates
-              // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
-              const screenCenterXViewport =
-                screenRect.left + screenRect.width / 2 - viewportRect.left;
-              const screenCenterYViewport =
-                screenRect.top + screenRect.height / 2 - viewportRect.top;
+  //           // Get current transform from state
+  //           setViewportTransform((currentTransform) => {
+  //             // Convert from viewport coordinates to content coordinates
+  //             // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
+  //             const screenCenterXViewport =
+  //               screenRect.left + screenRect.width / 2 - viewportRect.left;
+  //             const screenCenterYViewport =
+  //               screenRect.top + screenRect.height / 2 - viewportRect.top;
 
-              // Convert to content coordinates
-              screenCenterXContent =
-                (screenCenterXViewport - currentTransform.x) / currentTransform.scale;
-              screenCenterYContent =
-                (screenCenterYViewport - currentTransform.y) / currentTransform.scale;
+  //             // Convert to content coordinates
+  //             screenCenterXContent =
+  //               (screenCenterXViewport - currentTransform.x) / currentTransform.scale;
+  //             screenCenterYContent =
+  //               (screenCenterYViewport - currentTransform.y) / currentTransform.scale;
 
-              // Viewport center in viewport coordinates
-              const viewportCenterX = viewportRect.width / 2;
-              const viewportCenterY = viewportRect.height / 2;
+  //             // Viewport center in viewport coordinates
+  //             const viewportCenterX = viewportRect.width / 2;
+  //             const viewportCenterY = viewportRect.height / 2;
 
-              // Calculate new transform to center the screen at scale 1
-              const newX = viewportCenterX - screenCenterXContent;
-              const newY = viewportCenterY - screenCenterYContent;
+  //             // Calculate new transform to center the screen at scale 1
+  //             const newX = viewportCenterX - screenCenterXContent;
+  //             const newY = viewportCenterY - screenCenterYContent;
 
-              return {
-                x: newX,
-                y: newY,
-                scale: 1,
-              };
-            });
-            return; // Early return for fallback case
-          }
+  //             return {
+  //               x: newX,
+  //               y: newY,
+  //               scale: 1,
+  //             };
+  //           });
+  //           return; // Early return for fallback case
+  //         }
 
-          // Viewport center in viewport coordinates
-          const viewportCenterX = viewportRect.width / 2;
-          const viewportCenterY = viewportRect.height / 2;
+  //         // Viewport center in viewport coordinates
+  //         const viewportCenterX = viewportRect.width / 2;
+  //         const viewportCenterY = viewportRect.height / 2;
 
-          // To center the screen, we need:
-          // viewportCenter = screenCenterContent * scale + transform
-          // So: transform = viewportCenter - screenCenterContent * scale
-          // With scale = 1:
-          const newX = viewportCenterX - screenCenterXContent;
-          const newY = viewportCenterY - screenCenterYContent;
+  //         // To center the screen, we need:
+  //         // viewportCenter = screenCenterContent * scale + transform
+  //         // So: transform = viewportCenter - screenCenterContent * scale
+  //         // With scale = 1:
+  //         const newX = viewportCenterX - screenCenterXContent;
+  //         const newY = viewportCenterY - screenCenterYContent;
 
-          // Apply the transform and reset scale to 1
-          setViewportTransform({
-            x: newX,
-            y: newY,
-            scale: 1,
-          });
-        }
-      });
-    },
-    [screens],
-  );
+  //         // Apply the transform and reset scale to 1
+  //         setViewportTransform({
+  //           x: newX,
+  //           y: newY,
+  //           scale: 1,
+  //         });
+  //       }
+  //     });
+  //   },
+  //   [screens],
+  // );
 
   // Handle screen creation
   const handleScreenCreate = useCallback(
@@ -302,33 +399,49 @@ export default function Home() {
 
   // Handle screen click
   const handleScreenClick = (screenId: string) => {
+    // Don't select if we just finished dragging this screen
+    if (justFinishedDraggingRef.current === screenId) {
+      return;
+    }
+    // Don't re-select if already selected (prevents double-selection from click event after mouseUp)
+    if (selectedScreenId === screenId) {
+      return;
+    }
     setSelectedScreenId(screenId);
-    centerAndZoomScreen(screenId);
+    // Disabled: centerAndZoomScreen(screenId);
   };
 
-  // Effect to center screen after selection
-  useEffect(() => {
-    if (selectedScreenId) {
-      centerAndZoomScreen(selectedScreenId);
-    }
-  }, [selectedScreenId, centerAndZoomScreen]);
+  // Effect to center screen after selection - DISABLED
+  // useEffect(() => {
+  //   if (selectedScreenId) {
+  //     centerAndZoomScreen(selectedScreenId);
+  //   }
+  // }, [selectedScreenId, centerAndZoomScreen]);
 
-  // Load screens from storage on mount
+  // Load screens and viewport transform from storage on mount
   useEffect(() => {
-    const loadScreens = async () => {
+    const loadData = async () => {
       try {
+        // Load screens
         const loadedScreens = await storage.loadScreens();
         if (loadedScreens.length > 0) {
           setScreens(loadedScreens);
         }
+        
+        // Load viewport transform
+        const loadedTransform = await storage.loadViewportTransform();
+        if (loadedTransform) {
+          setViewportTransform(loadedTransform);
+        }
       } catch (error) {
-        console.error("Error loading screens:", error);
+        console.error("Error loading data:", error);
       } finally {
         setIsLoadingScreens(false);
+        setIsLoadingViewport(false);
       }
     };
 
-    loadScreens();
+    loadData();
   }, []);
 
   // Save screens to storage whenever they change
@@ -340,6 +453,30 @@ export default function Home() {
     }
   }, [screens, isLoadingScreens]);
 
+  // Save viewport transform to storage whenever it changes (debounced)
+  useEffect(() => {
+    if (!isLoadingViewport) {
+      // Clear existing timeout
+      if (viewportSaveTimeoutRef.current) {
+        clearTimeout(viewportSaveTimeoutRef.current);
+      }
+      
+      // Debounce save by 500ms to avoid too many writes
+      viewportSaveTimeoutRef.current = setTimeout(() => {
+        storage.saveViewportTransform(viewportTransform).catch((error) => {
+          console.error("Error saving viewport transform:", error);
+        });
+      }, 500);
+    }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (viewportSaveTimeoutRef.current) {
+        clearTimeout(viewportSaveTimeoutRef.current);
+      }
+    };
+  }, [viewportTransform, isLoadingViewport]);
+
   return (
     <div
       ref={viewportRef}
@@ -348,7 +485,7 @@ export default function Home() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      style={{ cursor: isDragging ? "grabbing" : "grab" }}
+      style={{ cursor: isDraggingScreen ? "grabbing" : isDragging ? "grabbing" : "grab" }}
     >
       <div
         className="viewport-content relative"
@@ -374,6 +511,11 @@ export default function Home() {
               top: screen.position ? `${screen.position.y}px` : "0px",
               transform: "translate(-50%, -50%)",
               zIndex,
+              cursor: screen.id === selectedScreenId 
+                ? "default" 
+                : isDraggingScreen && draggedScreenId === screen.id 
+                  ? "grabbing" 
+                  : "grab",
             }}
           >
             <Screen

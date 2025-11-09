@@ -147,6 +147,29 @@ export default function Screen({
     if (!modificationPrompt.trim()) return;
     const promptToSend = modificationPrompt;
 
+    // Add the prompt immediately as an incomplete conversation point (for modifications)
+    // This makes it appear in history right away while generation is in progress
+    const incompletePoint: ConversationPoint = {
+      prompt: promptToSend,
+      html: "",
+      title: null,
+      timestamp: Date.now(),
+    };
+    const pointsWithIncomplete = [...conversationPoints, incompletePoint];
+    setConversationPoints(pointsWithIncomplete);
+    
+    // Select the newly added prompt immediately
+    const incompleteIndex = pointsWithIncomplete.length - 1;
+    setSelectedPromptIndex(incompleteIndex);
+    
+    // Update screen data immediately to show the prompt in history
+    if (screenData) {
+      onUpdate(id, {
+        conversationPoints: pointsWithIncomplete,
+        selectedPromptIndex: incompleteIndex,
+      });
+    }
+
     setIsLoading(true);
     try {
       // Convert existing conversation points to history format for API
@@ -179,7 +202,10 @@ export default function Screen({
         timestamp: Date.now(),
       };
 
-      const finalPoints = [...conversationPoints, completedPoint];
+      // Replace the incomplete point we added earlier with the completed one
+      // The last point should be the incomplete one we just added
+      const finalPoints = [...pointsWithIncomplete.slice(0, -1), completedPoint];
+      
       setConversationPoints(finalPoints);
 
       // Reset generation tracking since we've completed
@@ -205,6 +231,19 @@ export default function Screen({
       }
     } catch (error) {
       console.error("Error generating UI:", error);
+      // Remove the incomplete point we added earlier since generation failed
+      const pointsWithoutIncomplete = pointsWithIncomplete.slice(0, -1);
+      setConversationPoints(pointsWithoutIncomplete);
+      setSelectedPromptIndex(pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null);
+      
+      // Update screen data to remove the incomplete point
+      if (screenData) {
+        onUpdate(id, {
+          conversationPoints: pointsWithoutIncomplete,
+          selectedPromptIndex: pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
+        });
+      }
+      
       // Reset generation tracking on error so it can be retried
       generationInProgressRef.current = null;
     } finally {
