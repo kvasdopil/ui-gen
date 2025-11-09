@@ -384,11 +384,13 @@ export default function Screen({
 
         {/* Screen Container with Iframe */}
         <div
-          className="border-border relative flex shadow-lg transition-all"
+          className={`relative flex shadow-lg transition-all ${isSelected
+            ? "border-2 border-blue-500"
+            : "border-2 border-transparent hover:border-blue-500"
+            }`}
           style={{
             width: "390px",
             height: "844px",
-            border: isSelected ? "2px solid #3b82f6" : "1px solid hsl(var(--border))",
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
             cursor: isSelected ? "default" : "pointer",
           }}

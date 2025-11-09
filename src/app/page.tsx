@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FaMagic } from "react-icons/fa";
 import Screen from "@/components/Screen";
+import UserAvatar from "@/components/UserAvatar";
 import type { ScreenData } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
@@ -534,6 +535,7 @@ export default function Home() {
       onMouseLeave={handleMouseUp}
       style={{ cursor: isDraggingScreen ? "grabbing" : isDragging ? "grabbing" : "grab" }}
     >
+      <UserAvatar />
       <div
         className="viewport-content relative"
         style={{

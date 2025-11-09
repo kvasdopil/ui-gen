@@ -1,6 +1,8 @@
 import { google } from "@ai-sdk/google";
-import { generateText } from "ai";
+import { generateText, tool } from "ai";
+import { z } from "zod";
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { GENERATE_UI_PROMPT } from "@/prompts/generate-ui";
 
 type HistoryItem = {
@@ -8,8 +10,60 @@ type HistoryItem = {
   content: string;
 };
 
+// Unsplash API tool function
+async function findUnsplashImage(query: string): Promise<string> {
+  console.log(`[Tool Call] findUnsplashImage - Input: query="${query}"`);
+
+  try {
+    const accessKey = process.env.UNSPLASH_ACCESS_KEY;
+    if (!accessKey) {
+      const error = "UNSPLASH_ACCESS_KEY is not configured";
+      console.error(`[Tool Call] findUnsplashImage - Error: ${error}`);
+      throw new Error(error);
+    }
+
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=1`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Client-ID ${accessKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const error = `Unsplash API error: ${response.status} ${response.statusText}`;
+      console.error(`[Tool Call] findUnsplashImage - Error: ${error}`);
+      throw new Error(error);
+    }
+
+    const data = await response.json();
+
+    if (!data.results || data.results.length === 0) {
+      const error = `No images found for query: ${query}`;
+      console.log(`[Tool Call] findUnsplashImage - Result: ${error}`);
+      throw new Error(error);
+    }
+
+    const imageUrl = data.results[0].urls.regular;
+    console.log(`[Tool Call] findUnsplashImage - Result: Success, image URL="${imageUrl}"`);
+    return imageUrl;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[Tool Call] findUnsplashImage - Error: ${errorMessage}`);
+    throw error;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // Check for authenticated session
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 },
+      );
+    }
+
     const { history } = await request.json();
 
     if (!history || !Array.isArray(history) || history.length === 0) {
@@ -19,10 +73,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if API key is configured
+    // Check if API keys are configured
     if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       return NextResponse.json(
         { error: "GOOGLE_GENERATIVE_AI_API_KEY is not configured" },
+        { status: 500 },
+      );
+    }
+
+    if (!process.env.UNSPLASH_ACCESS_KEY) {
+      return NextResponse.json(
+        { error: "UNSPLASH_ACCESS_KEY is not configured" },
         { status: 500 },
       );
     }
@@ -65,12 +126,28 @@ export async function POST(request: NextRequest) {
     // The API key is automatically read from GOOGLE_GENERATIVE_AI_API_KEY environment variable
     const model = google("gemini-2.5-flash");
 
-    // Generate HTML using Vercel AI SDK with conversation history
+    // Define the Unsplash image search tool
+    const findUnsplashImageTool = tool({
+      description:
+        "Search Unsplash for images matching a query string. Returns a medium-resolution image URL that can be used in HTML img tags.",
+      parameters: z.object({
+        query: z.string().describe("The search query to find matching images on Unsplash"),
+      }),
+      execute: async ({ query }) => {
+        return await findUnsplashImage(query);
+      },
+    });
+
+    // Generate HTML using Vercel AI SDK with conversation history and tools
     const { text } = await generateText({
       model,
       system: systemPrompt,
       prompt: finalPrompt,
       temperature: 0.5,
+      tools: {
+        findUnsplashImage: findUnsplashImageTool,
+      },
+      maxSteps: 5,
     });
 
     // Clean up the generated HTML - remove markdown code block markers

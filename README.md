@@ -8,6 +8,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
 - 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
+- 🖼️ **Unsplash Image Integration**: AI can automatically search and include relevant images from Unsplash using the `findUnsplashImage` tool
+- 🔄 **Multi-Step Conversations**: Supports up to 5 conversation steps, allowing the AI to make tool calls and follow-up responses
+- ♿ **Accessibility**: Generated UIs include proper semantic HTML (`<a>` for navigation, `<button>` for actions) and aria-labels for screen reader support
 - 🖼️ **Iframe Rendering**: Generated HTML is safely rendered in an isolated iframe
 - ⚡ **Real-time Generation**: Fast UI generation with loading states and error handling
 - 🧹 **Clean Output**: Automatically strips markdown code blocks from AI responses
@@ -22,7 +25,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 💾 **Persistent Storage**: All screens, conversations, generated content, and camera position/zoom are automatically saved to IndexedDB
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
 - 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
-- 🎨 **Visual Selection**: Selected screens display a 2px blue border
+- 🎨 **Visual Selection**: Screens have a transparent border by default, display a 2px solid blue border when selected, and show a 2px solid blue border on hover when not selected
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
 - 🖱️ **Draggable Screens**: Drag unselected screens to reposition them; panning is disabled during screen drag
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
@@ -57,7 +60,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** drag unselected screens to reposition them, **so that** I can organize my screens spatially
 - **As a** user, **I want** panning to be disabled when dragging a screen, **so that** I can move screens without accidentally panning the viewport
 - **As a** user, **I want** selected screens to remain non-draggable, **so that** I can interact with them without accidentally moving them
-- **As a** user, **I want to** see a visual indicator (blue border) on selected screens, **so that** I know which screen is active
+- **As a** user, **I want to** see a visual indicator (blue border) on selected screens and when hovering over unselected screens, **so that** I know which screen is active or being targeted
 - **As a** user, **I want to** click outside screens to deselect them, **so that** I can pan and zoom without interference
 - **As a** user, **I want to** see the prompt panel only when a screen is selected, **so that** the interface stays clean when no screen is active
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
@@ -100,6 +103,11 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** developer, **I want** all screens, conversation data, and camera position/zoom to be persisted in IndexedDB, **so that** users don't lose their work
 - **As a** user, **I want** generated UIs to use Font Awesome icons via CDN, **so that** icons render correctly without additional setup
 - **As a** user, **I want** generated UIs to use Unsplash images, **so that** mockups include realistic placeholder images
+- **As a** developer, **I want** the AI to have access to an Unsplash image search tool, **so that** it can automatically find and include relevant images in generated UIs
+- **As a** developer, **I want** all tool calls to be logged, **so that** I can debug and monitor AI tool usage
+- **As a** developer, **I want** the AI to support multi-step conversations with tool calls, **so that** it can perform complex operations like searching for images before generating the final UI
+- **As a** user with accessibility needs, **I want** generated UIs to use semantic HTML (`<a>` for navigation, `<button>` for actions), **so that** screen readers can properly interpret the interface
+- **As a** user with accessibility needs, **I want** key UI elements to have descriptive aria-labels, **so that** I can understand the purpose of each element through screen readers
 
 ## Tech Stack
 
@@ -172,9 +180,12 @@ yarn install
 
 ```env
 GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
+UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
 ```
 
-Get your API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+Get your API keys from:
+- Google Gemini: [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Unsplash: [Unsplash Developers](https://unsplash.com/developers) - Register as a developer and create a new application to get your Access Key
 
 4. Run the development server:
 
@@ -281,6 +292,21 @@ Generated HTML is rendered in an iframe for:
 - **Easy Integration**: Simple CSS link tag injection in the iframe template
 - **Professional Look**: Font Awesome provides a comprehensive set of well-designed icons
 
+### Accessibility Features
+
+Generated UIs include accessibility best practices:
+
+- **Semantic HTML**: 
+  - Navigation elements use `<a href="#">` tags
+  - Action elements use `<button>` tags
+  - Prevents use of non-semantic `<div>` elements for interactive content
+- **ARIA Labels**: 
+  - Key UI elements include descriptive `aria-label` attributes
+  - Labels describe element purpose and context, not just duplicate visible text
+  - Examples: `aria-label="list of users"`, `aria-label="main keyboard"`, `aria-label="Close dialog"`
+  - Applied to lists, navigation elements, button groups, content sections, and interactive elements without descriptive visible text
+- **Screen Reader Support**: Proper semantic structure and labels enable screen readers to properly interpret and navigate the generated interfaces
+
 ### API Design
 
 The `/api/create` endpoint:
@@ -292,6 +318,12 @@ The `/api/create` endpoint:
   - Previous LLM-generated HTML outputs
   - New modification requests
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
+- Supports up to 5 conversation steps (`maxSteps: 5`) for multi-turn interactions and tool calls
+- Provides `findUnsplashImage` tool that allows the AI to:
+  - Search Unsplash for images matching a query string
+  - Return medium-resolution image URLs (`urls.regular`) for use in generated HTML
+  - Automatically log all tool calls with input parameters and results
+- Validates required environment variables (GOOGLE_GENERATIVE_AI_API_KEY and UNSPLASH_ACCESS_KEY)
 - Cleans up markdown code blocks from AI responses
 - Returns clean HTML ready for iframe rendering
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`) at the beginning
@@ -374,6 +406,7 @@ The `/api/create` endpoint:
 ### Environment Variables
 
 - `GOOGLE_GENERATIVE_AI_API_KEY`: Required. Your Google Gemini API key
+- `UNSPLASH_ACCESS_KEY`: Required. Your Unsplash API Access Key (get it from [Unsplash Developers](https://unsplash.com/developers))
 
 ### AI Model Configuration
 

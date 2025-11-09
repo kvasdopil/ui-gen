@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Source_Serif_4, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -33,7 +34,7 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${sourceSerif.variable} ${ibmPlexMono.variable} antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
