@@ -67,6 +67,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** click on empty space twice to create a new screen (first click deselects, second shows form), **so that** I can easily deselect screens without accidentally triggering the creation form
 - **As a** user, **I want to** see a floating form appear at the click location when creating a new screen, **so that** I can enter the prompt for the new screen
 - **As a** user, **I want to** have my input preserved if I cancel the new screen form, **so that** I don't lose my work if I click outside accidentally
+- **As a** user, **I want** the new screen form to close when I select a screen, **so that** the form doesn't stay visible when I'm working with existing screens
 - **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
 - **As a** user, **I want to** see a prompt history panel appear when I select a screen, **so that** I can see my conversation history
 - **As a** user, **I want to** see all my previous prompts displayed as read-only text in the history panel, **so that** I can reference my conversation history
@@ -197,14 +198,14 @@ yarn dev
 2. **Click Again to Create**: Click on empty space again (when no screen is selected) to show the new screen form
 3. **Enter Prompt**: A floating form will appear at the click location with a "What you want to create" input field
 4. **Create Screen**: Enter your prompt and click the "Create" button - a new screen will be created at that location and start generating immediately
-5. **Cancel**: Click outside the form to cancel (your input will be preserved for the next attempt)
+5. **Cancel**: Click outside the form or select any screen to cancel (your input will be preserved for the next attempt)
 6. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
 
 ### Navigating Multiple Screens
 
 1. **Panning**: Press and drag on empty space to pan around the viewport
 2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale)
-3. **Selecting Screens**: Click any screen to select it and view its prompt panel
+3. **Selecting Screens**: Click any screen to select it and view its prompt panel (this will also close the new screen form if it's open)
 4. **Dragging Screens**: Click and drag unselected screens to reposition them; panning is automatically disabled during screen drag
 5. **Visual Feedback**: Selected screens display a 2px blue border and appear on top; unselected screens show a grab cursor
 6. **Deselecting**: Click on empty space to deselect the current screen
@@ -292,7 +293,9 @@ The `/api/create` endpoint:
   - Provides new screen creation flow: first click on empty space deselects current screen, second click (when no screen selected) shows form
   - Preserves form input when canceling the new screen flow
   - Auto-loads screens and viewport transform from IndexedDB on mount
-  - Auto-saves screens and viewport transform to IndexedDB whenever they change (viewport transform is debounced by 500ms)
+  - Auto-saves screens and viewport transform to IndexedDB whenever they change (screens debounced by 300ms, viewport transform debounced by 500ms)
+  - Uses functional state updates in `handleScreenUpdate` to prevent race conditions when multiple screens update simultaneously
+  - Always preserves screen positions during updates unless explicitly changed
   - Z-index management: newer screens appear above older ones, selected screens always on top
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Manages conversation points state (prompt, HTML, title, timestamp for each point)
@@ -304,7 +307,9 @@ The `/api/create` endpoint:
   - Adds modification prompts to history immediately (before API response) for better UX
   - Replaces incomplete points with completed ones when generation finishes
   - Removes incomplete points if generation fails
-  - Uses ref to prevent duplicate API calls
+  - Uses ref with screen ID + timestamp key to prevent duplicate API calls
+  - Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
+  - Preserves original timestamps when completing conversation points
   - Shows PromptPanel only when screen is selected
   - Handles screen click events for selection
   - Displays "No content" message when screen has no HTML

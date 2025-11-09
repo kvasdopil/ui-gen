@@ -114,13 +114,14 @@ export default function Screen({
       const lastPoint = screenData.conversationPoints[screenData.conversationPoints.length - 1];
       // If last point has a prompt but no HTML, it means generation needs to start
       if (lastPoint.prompt && !lastPoint.html) {
-        // Create a unique key for this generation attempt
-        const generationKey = `${lastPoint.prompt}-${lastPoint.timestamp}`;
-        
+        // Create a unique key for this generation attempt using the existing point's timestamp
+        const generationKey = `${screenData.id}-${lastPoint.timestamp}`;
+
         // Only trigger if we haven't already started generation for this point
         if (generationInProgressRef.current !== generationKey) {
           generationInProgressRef.current = generationKey;
-          handleSend(lastPoint.prompt);
+          // Use the existing incomplete point instead of creating a new one
+          handleSend(lastPoint.prompt, lastPoint.timestamp);
         }
       } else {
         // Reset ref if the point has HTML (generation completed)
@@ -143,39 +144,66 @@ export default function Screen({
     return history;
   };
 
-  const handleSend = async (modificationPrompt: string) => {
+  const handleSend = async (modificationPrompt: string, existingTimestamp?: number) => {
     if (!modificationPrompt.trim()) return;
     const promptToSend = modificationPrompt;
 
-    // Add the prompt immediately as an incomplete conversation point (for modifications)
-    // This makes it appear in history right away while generation is in progress
-    const incompletePoint: ConversationPoint = {
-      prompt: promptToSend,
-      html: "",
-      title: null,
-      timestamp: Date.now(),
-    };
-    const pointsWithIncomplete = [...conversationPoints, incompletePoint];
-    setConversationPoints(pointsWithIncomplete);
-    
-    // Select the newly added prompt immediately
-    const incompleteIndex = pointsWithIncomplete.length - 1;
-    setSelectedPromptIndex(incompleteIndex);
-    
-    // Update screen data immediately to show the prompt in history
-    if (screenData) {
-      onUpdate(id, {
-        conversationPoints: pointsWithIncomplete,
-        selectedPromptIndex: incompleteIndex,
-      });
+    let pointsWithIncomplete: ConversationPoint[];
+    let incompleteIndex: number;
+    const timestampToUse = existingTimestamp || Date.now();
+
+    // If we have an existing timestamp, it means we're being called from auto-generation
+    // and should reuse the existing incomplete point from screenData
+    if (existingTimestamp && screenData) {
+      // Use the existing incomplete point from screenData
+      pointsWithIncomplete = screenData.conversationPoints;
+      incompleteIndex = pointsWithIncomplete.length - 1;
+      // Sync local state with screenData
+      setConversationPoints(pointsWithIncomplete);
+      setSelectedPromptIndex(incompleteIndex);
+    } else {
+      // Check if there's already an incomplete point for this prompt (user-initiated modification)
+      const existingIncompleteIndex = conversationPoints.findIndex(
+        (p) => p.prompt === promptToSend && !p.html
+      );
+
+      if (existingIncompleteIndex >= 0) {
+        // Reuse existing incomplete point - don't create a duplicate
+        pointsWithIncomplete = conversationPoints;
+        incompleteIndex = existingIncompleteIndex;
+      } else {
+        // Add the prompt immediately as an incomplete conversation point (for modifications)
+        // This makes it appear in history right away while generation is in progress
+        const incompletePoint: ConversationPoint = {
+          prompt: promptToSend,
+          html: "",
+          title: null,
+          timestamp: timestampToUse,
+        };
+        pointsWithIncomplete = [...conversationPoints, incompletePoint];
+        incompleteIndex = pointsWithIncomplete.length - 1;
+        setConversationPoints(pointsWithIncomplete);
+
+        // Select the newly added prompt immediately
+        setSelectedPromptIndex(incompleteIndex);
+
+        // Update screen data immediately to show the prompt in history
+        if (screenData) {
+          onUpdate(id, {
+            conversationPoints: pointsWithIncomplete,
+            selectedPromptIndex: incompleteIndex,
+          });
+        }
+      }
     }
 
     setIsLoading(true);
     try {
       // Convert existing conversation points to history format for API
-      // Only include completed points (those with HTML)
-      const historyForApi = conversationPointsToHistory(conversationPoints);
-      
+      // Only include completed points (those with HTML) - this automatically excludes the incomplete point
+      // Use pointsWithIncomplete to ensure we have the latest data
+      const historyForApi = conversationPointsToHistory(pointsWithIncomplete);
+
       // Add the new user prompt to the history for the API
       historyForApi.push({ type: "user", content: promptToSend });
 
@@ -195,17 +223,22 @@ export default function Screen({
       const title = extractTitle(data.html);
 
       // Create the completed conversation point with HTML and title
+      // Preserve the original timestamp from the incomplete point
       const completedPoint: ConversationPoint = {
         prompt: promptToSend,
         html: data.html,
         title,
-        timestamp: Date.now(),
+        timestamp: timestampToUse,
       };
 
-      // Replace the incomplete point we added earlier with the completed one
-      // The last point should be the incomplete one we just added
-      const finalPoints = [...pointsWithIncomplete.slice(0, -1), completedPoint];
-      
+      // Replace the incomplete point with the completed one
+      // Find the incomplete point index - it should be at incompleteIndex
+      const finalPoints = [
+        ...pointsWithIncomplete.slice(0, incompleteIndex),
+        completedPoint,
+        ...pointsWithIncomplete.slice(incompleteIndex + 1),
+      ];
+
       setConversationPoints(finalPoints);
 
       // Reset generation tracking since we've completed
@@ -232,18 +265,30 @@ export default function Screen({
     } catch (error) {
       console.error("Error generating UI:", error);
       // Remove the incomplete point we added earlier since generation failed
-      const pointsWithoutIncomplete = pointsWithIncomplete.slice(0, -1);
-      setConversationPoints(pointsWithoutIncomplete);
-      setSelectedPromptIndex(pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null);
-      
-      // Update screen data to remove the incomplete point
-      if (screenData) {
-        onUpdate(id, {
-          conversationPoints: pointsWithoutIncomplete,
-          selectedPromptIndex: pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
-        });
+      // Only remove if we created it (not if it was already there from auto-gen)
+      if (!existingTimestamp) {
+        // Find the incomplete point we might have added
+        const incompletePointIndex = pointsWithIncomplete.findIndex(
+          (p) => p.prompt === promptToSend && !p.html
+        );
+        if (incompletePointIndex >= 0) {
+          const pointsWithoutIncomplete = [
+            ...pointsWithIncomplete.slice(0, incompletePointIndex),
+            ...pointsWithIncomplete.slice(incompletePointIndex + 1),
+          ];
+          setConversationPoints(pointsWithoutIncomplete);
+          setSelectedPromptIndex(pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null);
+
+          // Update screen data to remove the incomplete point
+          if (screenData) {
+            onUpdate(id, {
+              conversationPoints: pointsWithoutIncomplete,
+              selectedPromptIndex: pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
+            });
+          }
+        }
       }
-      
+
       // Reset generation tracking on error so it can be retried
       generationInProgressRef.current = null;
     } finally {

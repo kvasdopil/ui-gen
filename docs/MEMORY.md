@@ -57,10 +57,11 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - `IdbStorage` class implementing IndexedDB operations
   - Auto-save on screen changes, auto-load on mount
   - Auto-save viewport transform (camera position and zoom) with 500ms debounce to avoid excessive writes
+  - Auto-save screens with 300ms debounce to batch rapid updates and prevent race conditions
   - Auto-load viewport transform on mount
   - Database version: 2 (upgraded from 1 to add viewportTransform object store)
   - Easy to swap for backend persistence later (just implement Storage interface)
-- **Location**: `src/lib/storage.ts`, `src/lib/types.ts`
+- **Location**: `src/lib/storage.ts`, `src/lib/types.ts`, `src/app/page.tsx`
 
 ### 8. Data Structure
 
@@ -115,6 +116,37 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - When sending modification: add incomplete point immediately to history, replace with completed point when generation finishes
   - If generation fails: remove the incomplete point to keep history clean
   - Check if last point matches prompt and is incomplete before replacing (prevents duplicates)
+  - Use existing timestamp when called from auto-generation to prevent duplicate points
+  - Reuse existing incomplete points instead of creating new ones when generation is triggered multiple times
+- **Location**: `src/components/Screen.tsx`
+
+### 13. Race Condition Prevention in Screen Updates
+
+- **Decision**: Use functional state updates and debounced storage saves to prevent race conditions
+- **Reason**: 
+  - Multiple screens updating simultaneously could cause stale state issues
+  - Screen positions could be lost when updates happen concurrently
+  - Storage saves could overwrite in-flight updates
+- **Implementation**:
+  - `handleScreenUpdate` uses functional updates (`setScreens(prevScreens => ...)`) instead of closure state
+  - This ensures each update works with the latest state, preventing overwrites
+  - Screen saves are debounced by 300ms to batch rapid updates and prevent storage race conditions
+  - Position is always preserved unless explicitly updated in the updates object
+  - Added warning log if screen not found during update (for debugging)
+- **Location**: `src/app/page.tsx`
+
+### 14. Duplicate API Call Prevention
+
+- **Decision**: Use screen ID + timestamp for generation key and reuse existing incomplete points
+- **Reason**: 
+  - Auto-generation effect could trigger multiple times with different timestamps
+  - Multiple API calls for the same generation waste resources and cause duplicate entries
+- **Implementation**:
+  - Generation key format: `${screenData.id}-${lastPoint.timestamp}` (more unique than prompt-timestamp)
+  - When auto-generation triggers, pass existing timestamp to `handleSend` to reuse incomplete point
+  - `handleSend` checks for existing incomplete points before creating new ones
+  - When called from auto-generation with existing timestamp, reuse the incomplete point from `screenData`
+  - Preserve original timestamp when completing conversation points
 - **Location**: `src/components/Screen.tsx`
 
 ## Environment Variables
@@ -151,7 +183,8 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Adds modification prompts to history immediately (before API response) for better UX
   - Replaces incomplete points with completed ones when generation finishes
   - Removes incomplete points if generation fails
-  - Uses `generationInProgressRef` to prevent duplicate API calls
+  - Uses `generationInProgressRef` with screen ID + timestamp key to prevent duplicate API calls
+- Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
   - Displays "No content" message when screen has no HTML
   - Shows PromptPanel only when screen is selected
 
@@ -177,7 +210,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Object stores:
     - `screens` with key `"all"` storing array of ScreenData
     - `viewportTransform` with key `"current"` storing ViewportTransform
-  - Auto-saves screens whenever they change
+  - Auto-saves screens whenever they change (debounced by 300ms to prevent race conditions)
   - Auto-saves viewport transform with 500ms debounce
   - Auto-loads screens and viewport transform on mount
   - Easy to swap for backend persistence (just implement Storage interface)
@@ -367,7 +400,10 @@ interface PromptPanelProps {
 - Viewport transform (camera position and zoom) is auto-saved with 500ms debounce, auto-loaded on mount
 - New screens are NOT auto-selected or auto-centered to prevent viewport disruption
 - Z-index: Newer screens appear above older ones; selected screens always on top
-- Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations
+- Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations using screen ID + timestamp key
+- Race condition prevention: `handleScreenUpdate` uses functional updates to always work with latest state
+- Storage debouncing: Screen saves are debounced by 300ms to batch rapid updates and prevent race conditions
+- Position preservation: Screen positions are always preserved during updates unless explicitly changed
 - Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
 - No default screen - page starts empty, user clicks to create first screen
 - Screen dragging: Unselected screens can be dragged; panning is disabled during drag; selected screens are non-draggable

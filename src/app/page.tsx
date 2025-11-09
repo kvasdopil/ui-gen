@@ -13,6 +13,7 @@ export default function Home() {
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [viewportTransform, setViewportTransform] = useState({ x: 0, y: 0, scale: 1 });
   const viewportSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const screensSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -391,11 +392,31 @@ export default function Home() {
   }, [newScreenInput, newScreenPosition, viewportTransform]);
 
   // Handle screen update
-  const handleScreenUpdate = (screenId: string, updates: Partial<ScreenData>) => {
-    setScreens(
-      screens.map((screen) => (screen.id === screenId ? { ...screen, ...updates } : screen)),
-    );
-  };
+  const handleScreenUpdate = useCallback((screenId: string, updates: Partial<ScreenData>) => {
+    // Use functional update to avoid race conditions when multiple screens update simultaneously
+    setScreens((prevScreens) => {
+      const screenIndex = prevScreens.findIndex((s) => s.id === screenId);
+      if (screenIndex === -1) {
+        // Screen not found - this shouldn't happen, but log for debugging
+        console.warn(`Screen ${screenId} not found in screens array`);
+        return prevScreens;
+      }
+      
+      return prevScreens.map((screen) => {
+        if (screen.id === screenId) {
+          // Always preserve position unless explicitly updated
+          // This ensures position is never lost during updates
+          const updatedScreen = { ...screen, ...updates };
+          if (!updates.position && screen.position) {
+            // Preserve existing position if not being updated
+            updatedScreen.position = screen.position;
+          }
+          return updatedScreen;
+        }
+        return screen;
+      });
+    });
+  }, []);
 
   // Handle screen click
   const handleScreenClick = (screenId: string) => {
@@ -408,6 +429,8 @@ export default function Home() {
       return;
     }
     setSelectedScreenId(screenId);
+    // Close new screen form if it's open
+    setIsNewScreenMode(false);
     // Disabled: centerAndZoomScreen(screenId);
   };
 
@@ -444,13 +467,28 @@ export default function Home() {
     loadData();
   }, []);
 
-  // Save screens to storage whenever they change
+  // Save screens to storage whenever they change (debounced to prevent race conditions)
   useEffect(() => {
     if (!isLoadingScreens && screens.length >= 0) {
-      storage.saveScreens(screens).catch((error) => {
-        console.error("Error saving screens:", error);
-      });
+      // Clear existing timeout
+      if (screensSaveTimeoutRef.current) {
+        clearTimeout(screensSaveTimeoutRef.current);
+      }
+      
+      // Debounce save by 300ms to batch rapid updates and prevent race conditions
+      screensSaveTimeoutRef.current = setTimeout(() => {
+        storage.saveScreens(screens).catch((error) => {
+          console.error("Error saving screens:", error);
+        });
+      }, 300);
     }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (screensSaveTimeoutRef.current) {
+        clearTimeout(screensSaveTimeoutRef.current);
+      }
+    };
   }, [screens, isLoadingScreens]);
 
   // Save viewport transform to storage whenever it changes (debounced)
