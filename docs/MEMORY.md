@@ -52,7 +52,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **Decision**: Use IndexedDB for client-side persistence with abstraction layer
 - **Reason**: Persist screens, conversations, generated content, and camera position/zoom without backend dependency
-- **Implementation**: 
+- **Implementation**:
   - Storage abstraction interface in `src/lib/storage.ts`
   - `IdbStorage` class implementing IndexedDB operations
   - Auto-save on screen changes, auto-load on mount
@@ -108,7 +108,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ### 12. Conversation Point Management
 
 - **Decision**: Replace incomplete conversation points instead of duplicating them, and show prompts immediately in history
-- **Reason**: 
+- **Reason**:
   - Prevents duplicate prompts in history when creating new screens
   - Provides better UX by showing modification prompts immediately while generation is in progress
 - **Implementation**:
@@ -123,7 +123,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ### 13. Race Condition Prevention in Screen Updates
 
 - **Decision**: Use functional state updates and debounced storage saves to prevent race conditions
-- **Reason**: 
+- **Reason**:
   - Multiple screens updating simultaneously could cause stale state issues
   - Screen positions could be lost when updates happen concurrently
   - Storage saves could overwrite in-flight updates
@@ -138,7 +138,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 ### 14. Duplicate API Call Prevention
 
 - **Decision**: Use screen ID + timestamp for generation key and reuse existing incomplete points
-- **Reason**: 
+- **Reason**:
   - Auto-generation effect could trigger multiple times with different timestamps
   - Multiple API calls for the same generation waste resources and cause duplicate entries
 - **Implementation**:

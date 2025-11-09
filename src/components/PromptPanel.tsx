@@ -70,7 +70,7 @@ export default function PromptPanel({
   };
 
   return (
-    <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-y-auto overflow-x-visible">
+    <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-x-visible overflow-y-auto">
       <div className="flex flex-col gap-2">
         {/* Display all conversation points (prompts) */}
         {conversationPoints.map((point, index) => {
@@ -81,18 +81,18 @@ export default function PromptPanel({
                 onClick={() => onPromptSelect(index)}
                 className={`flex-1 cursor-pointer rounded-lg border px-3 py-2 text-xs shadow-sm transition-colors ${
                   selectedPromptIndex === index
-                    ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20 peer-hover:border-red-300 peer-hover:bg-red-50 dark:peer-hover:border-red-400 dark:peer-hover:bg-red-900/20"
-                    : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700 peer-hover:border-red-300 peer-hover:bg-red-50 dark:peer-hover:border-red-400 dark:peer-hover:bg-red-900/20"
+                    ? "border-blue-500 bg-blue-50 peer-hover:border-red-300 peer-hover:bg-red-50 dark:border-blue-400 dark:bg-blue-900/20 dark:peer-hover:border-red-400 dark:peer-hover:bg-red-900/20"
+                    : "border-gray-200 bg-white peer-hover:border-red-300 peer-hover:bg-red-50 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:peer-hover:border-red-400 dark:peer-hover:bg-red-900/20 dark:hover:border-gray-600 dark:hover:bg-gray-700"
                 } dark:text-gray-200`}
               >
                 {point.prompt}
               </div>
               {/* Delete icon area - always reserve space for consistent width */}
-              <div className="flex-shrink-0 w-5 flex items-center justify-center">
+              <div className="flex w-5 flex-shrink-0 items-center justify-center">
                 {isLastEntry && (
                   <button
                     onClick={(e) => handleDeleteClick(e, index)}
-                    className="peer relative flex items-center justify-center text-gray-600 transition-colors hover:text-red-500 dark:text-gray-400 dark:hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="peer relative flex items-center justify-center text-gray-600 opacity-0 transition-colors transition-opacity group-hover:opacity-100 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-500"
                   >
                     <MdDeleteOutline className="text-base" />
                   </button>

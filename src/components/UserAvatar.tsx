@@ -93,7 +93,7 @@ export default function UserAvatar() {
           onMouseMove={(e) => e.stopPropagation()}
           onMouseUp={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-0 top-14 mt-2 w-64 cursor-default rounded-lg border border-gray-300 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800"
+          className="absolute top-14 right-0 mt-2 w-64 cursor-default rounded-lg border border-gray-300 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800"
         >
           <div className="p-4">
             <div className="mb-3 border-b border-gray-200 pb-3 dark:border-gray-700">
@@ -120,4 +120,3 @@ export default function UserAvatar() {
     </div>
   );
 }
-

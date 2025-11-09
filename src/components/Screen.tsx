@@ -108,11 +108,7 @@ export default function Screen({
 
   // Auto-start generation if screenData has conversation points but last one doesn't have HTML
   useEffect(() => {
-    if (
-      screenData &&
-      screenData.conversationPoints.length > 0 &&
-      !isLoading
-    ) {
+    if (screenData && screenData.conversationPoints.length > 0 && !isLoading) {
       const lastPoint = screenData.conversationPoints[screenData.conversationPoints.length - 1];
       // If last point has a prompt but no HTML, it means generation needs to start
       if (lastPoint.prompt && !lastPoint.html) {
@@ -166,7 +162,7 @@ export default function Screen({
     } else {
       // Check if there's already an incomplete point for this prompt (user-initiated modification)
       const existingIncompleteIndex = conversationPoints.findIndex(
-        (p) => p.prompt === promptToSend && !p.html
+        (p) => p.prompt === promptToSend && !p.html,
       );
 
       if (existingIncompleteIndex >= 0) {
@@ -271,7 +267,7 @@ export default function Screen({
       if (!existingTimestamp) {
         // Find the incomplete point we might have added
         const incompletePointIndex = pointsWithIncomplete.findIndex(
-          (p) => p.prompt === promptToSend && !p.html
+          (p) => p.prompt === promptToSend && !p.html,
         );
         if (incompletePointIndex >= 0) {
           const pointsWithoutIncomplete = [
@@ -279,13 +275,16 @@ export default function Screen({
             ...pointsWithIncomplete.slice(incompletePointIndex + 1),
           ];
           setConversationPoints(pointsWithoutIncomplete);
-          setSelectedPromptIndex(pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null);
+          setSelectedPromptIndex(
+            pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
+          );
 
           // Update screen data to remove the incomplete point
           if (screenData) {
             onUpdate(id, {
               conversationPoints: pointsWithoutIncomplete,
-              selectedPromptIndex: pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
+              selectedPromptIndex:
+                pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
             });
           }
         }
@@ -384,10 +383,11 @@ export default function Screen({
 
         {/* Screen Container with Iframe */}
         <div
-          className={`relative flex shadow-lg transition-all ${isSelected
-            ? "border-2 border-blue-500"
-            : "border-2 border-transparent hover:border-blue-500"
-            }`}
+          className={`relative flex shadow-lg transition-all ${
+            isSelected
+              ? "border-2 border-blue-500"
+              : "border-2 border-transparent hover:border-blue-500"
+          }`}
           style={{
             width: "390px",
             height: "844px",

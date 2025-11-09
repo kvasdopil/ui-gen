@@ -184,6 +184,7 @@ UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
 ```
 
 Get your API keys from:
+
 - Google Gemini: [Google AI Studio](https://makersuite.google.com/app/apikey)
 - Unsplash: [Unsplash Developers](https://unsplash.com/developers) - Register as a developer and create a new application to get your Access Key
 
@@ -296,11 +297,11 @@ Generated HTML is rendered in an iframe for:
 
 Generated UIs include accessibility best practices:
 
-- **Semantic HTML**: 
+- **Semantic HTML**:
   - Navigation elements use `<a href="#">` tags
   - Action elements use `<button>` tags
   - Prevents use of non-semantic `<div>` elements for interactive content
-- **ARIA Labels**: 
+- **ARIA Labels**:
   - Key UI elements include descriptive `aria-label` attributes
   - Labels describe element purpose and context, not just duplicate visible text
   - Examples: `aria-label="list of users"`, `aria-label="main keyboard"`, `aria-label="Close dialog"`

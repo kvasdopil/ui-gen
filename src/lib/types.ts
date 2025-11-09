@@ -11,4 +11,3 @@ export type ScreenData = {
   selectedPromptIndex: number | null;
   position?: { x: number; y: number };
 };
-

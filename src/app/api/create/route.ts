@@ -58,10 +58,7 @@ export async function POST(request: NextRequest) {
     // Check for authenticated session
     const session = await auth();
     if (!session) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 },
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { history } = await request.json();
@@ -82,10 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!process.env.UNSPLASH_ACCESS_KEY) {
-      return NextResponse.json(
-        { error: "UNSPLASH_ACCESS_KEY is not configured" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "UNSPLASH_ACCESS_KEY is not configured" }, { status: 500 });
     }
 
     // Use GENERATE_UI_PROMPT constant as system prompt

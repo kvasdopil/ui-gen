@@ -105,4 +105,3 @@ class IdbStorage implements Storage {
 
 // Export default storage instance
 export const storage: Storage = new IdbStorage();
-

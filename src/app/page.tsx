@@ -41,17 +41,17 @@ export default function Home() {
 
     // Check if clicking on a screen container
     const screenContainer = target.closest("[data-screen-container]") as HTMLElement | null;
-    
+
     // If clicking on a screen container, check if it's unselected
     if (screenContainer) {
       const screenId = screenContainer.id;
       const screen = screens.find((s) => s.id === screenId);
-      
+
       // Only allow dragging if screen is not selected
       if (screen && screen.id !== selectedScreenId) {
         // Deselect current screen when starting to drag another screen
         setSelectedScreenId(null);
-        
+
         // Set up potential screen drag (but don't mark as dragging yet)
         const rect = viewportRef.current?.getBoundingClientRect();
         if (rect && screen.position) {
@@ -79,7 +79,7 @@ export default function Home() {
     if (isEmptySpace) {
       // Store whether a screen was selected before we deselect (for popup logic)
       const hadSelectedScreen = selectedScreenId !== null;
-      
+
       // Unselect screen when clicking on empty space
       setSelectedScreenId(null);
 
@@ -119,25 +119,25 @@ export default function Home() {
         // Calculate mouse movement delta in viewport coordinates
         const deltaX = e.clientX - screenDragStart.x;
         const deltaY = e.clientY - screenDragStart.y;
-        
+
         // Check if mouse moved significantly (more than 5px) to consider it a drag
         const movedSignificantly = Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5;
-        
+
         if (movedSignificantly && !isDraggingScreen) {
           // User started dragging the screen
           setIsDraggingScreen(true);
         }
-        
+
         // Only update position if we're actually dragging
         if (isDraggingScreen) {
           // Convert delta to content coordinates (accounting for scale)
           const contentDeltaX = deltaX / viewportTransform.scale;
           const contentDeltaY = deltaY / viewportTransform.scale;
-          
+
           // Calculate new screen position
           const newX = screenDragStart.screenX + contentDeltaX;
           const newY = screenDragStart.screenY + contentDeltaY;
-          
+
           // Update screen position
           handleScreenUpdate(draggedScreenId, {
             position: { x: newX, y: newY },
@@ -334,25 +334,22 @@ export default function Home() {
   // );
 
   // Handle screen creation
-  const handleScreenCreate = useCallback(
-    (screenData: Omit<ScreenData, "id">) => {
-      // Generate ID when function is called, not during render
-      const timestamp = Date.now();
-      const newScreen: ScreenData = {
-        ...screenData,
-        id: `screen-${timestamp}`,
-        // Position will be set when creating from form, otherwise use default
-        position: screenData.position || { x: 0, y: 0 },
-      };
-      setScreens((prevScreens) => [...prevScreens, newScreen]);
-      // Don't auto-select - let user click to select if they want
-      // setSelectedScreenId(newScreen.id);
+  const handleScreenCreate = useCallback((screenData: Omit<ScreenData, "id">) => {
+    // Generate ID when function is called, not during render
+    const timestamp = Date.now();
+    const newScreen: ScreenData = {
+      ...screenData,
+      id: `screen-${timestamp}`,
+      // Position will be set when creating from form, otherwise use default
+      position: screenData.position || { x: 0, y: 0 },
+    };
+    setScreens((prevScreens) => [...prevScreens, newScreen]);
+    // Don't auto-select - let user click to select if they want
+    // setSelectedScreenId(newScreen.id);
 
-      // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
-      // centerAndZoomScreen(newScreen.id);
-    },
-    [],
-  );
+    // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
+    // centerAndZoomScreen(newScreen.id);
+  }, []);
 
   // Handle creating a new screen from the form
   const handleCreateNewScreen = useCallback(() => {
@@ -402,7 +399,7 @@ export default function Home() {
         console.warn(`Screen ${screenId} not found in screens array`);
         return prevScreens;
       }
-      
+
       return prevScreens.map((screen) => {
         if (screen.id === screenId) {
           // Always preserve position unless explicitly updated
@@ -436,13 +433,16 @@ export default function Home() {
   };
 
   // Handle screen deletion
-  const handleScreenDelete = useCallback((screenId: string) => {
-    setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
-    // Deselect if the deleted screen was selected
-    if (selectedScreenId === screenId) {
-      setSelectedScreenId(null);
-    }
-  }, [selectedScreenId]);
+  const handleScreenDelete = useCallback(
+    (screenId: string) => {
+      setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
+      // Deselect if the deleted screen was selected
+      if (selectedScreenId === screenId) {
+        setSelectedScreenId(null);
+      }
+    },
+    [selectedScreenId],
+  );
 
   // Effect to center screen after selection - DISABLED
   // useEffect(() => {
@@ -460,7 +460,7 @@ export default function Home() {
         if (loadedScreens.length > 0) {
           setScreens(loadedScreens);
         }
-        
+
         // Load viewport transform
         const loadedTransform = await storage.loadViewportTransform();
         if (loadedTransform) {
@@ -484,7 +484,7 @@ export default function Home() {
       if (screensSaveTimeoutRef.current) {
         clearTimeout(screensSaveTimeoutRef.current);
       }
-      
+
       // Debounce save by 300ms to batch rapid updates and prevent race conditions
       screensSaveTimeoutRef.current = setTimeout(() => {
         storage.saveScreens(screens).catch((error) => {
@@ -508,7 +508,7 @@ export default function Home() {
       if (viewportSaveTimeoutRef.current) {
         clearTimeout(viewportSaveTimeoutRef.current);
       }
-      
+
       // Debounce save by 500ms to avoid too many writes
       viewportSaveTimeoutRef.current = setTimeout(() => {
         storage.saveViewportTransform(viewportTransform).catch((error) => {
@@ -545,39 +545,39 @@ export default function Home() {
       >
         {screens.map((screen, index) => {
           // Selected screens appear on top, then newer screens
-          const zIndex = selectedScreenId === screen.id 
-            ? screens.length + 1000 
-            : index + 1;
-          
+          const zIndex = selectedScreenId === screen.id ? screens.length + 1000 : index + 1;
+
           return (
-          <div
-            key={screen.id}
-            id={screen.id}
-            data-screen-container
-            style={{
-              position: "absolute",
-              left: screen.position ? `${screen.position.x}px` : "0px",
-              top: screen.position ? `${screen.position.y}px` : "0px",
-              transform: "translate(-50%, -50%)",
-              zIndex,
-              cursor: screen.id === selectedScreenId 
-                ? "default" 
-                : isDraggingScreen && draggedScreenId === screen.id 
-                  ? "grabbing" 
-                  : "grab",
-            }}
-          >
-            <Screen
+            <div
+              key={screen.id}
               id={screen.id}
-              isSelected={selectedScreenId === screen.id}
-              onScreenClick={handleScreenClick}
-              onCreate={handleScreenCreate}
-              onUpdate={handleScreenUpdate}
-              onDelete={handleScreenDelete}
-              screenData={screen}
-            />
-          </div>
-        )})}
+              data-screen-container
+              style={{
+                position: "absolute",
+                left: screen.position ? `${screen.position.x}px` : "0px",
+                top: screen.position ? `${screen.position.y}px` : "0px",
+                transform: "translate(-50%, -50%)",
+                zIndex,
+                cursor:
+                  screen.id === selectedScreenId
+                    ? "default"
+                    : isDraggingScreen && draggedScreenId === screen.id
+                      ? "grabbing"
+                      : "grab",
+              }}
+            >
+              <Screen
+                id={screen.id}
+                isSelected={selectedScreenId === screen.id}
+                onScreenClick={handleScreenClick}
+                onCreate={handleScreenCreate}
+                onUpdate={handleScreenUpdate}
+                onDelete={handleScreenDelete}
+                screenData={screen}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {/* New Screen Form - positioned absolutely in viewport coordinates */}
