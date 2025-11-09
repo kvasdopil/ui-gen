@@ -12,14 +12,18 @@ interface PromptPanelProps {
   history: HistoryItem[];
   onSend: (modificationPrompt: string) => void;
   isLoading: boolean;
+  selectedPromptIndex: number | null;
+  onPromptSelect: (historyIndex: number) => void;
 }
 
-export default function PromptPanel({ history, onSend, isLoading }: PromptPanelProps) {
+export default function PromptPanel({ history, onSend, isLoading, selectedPromptIndex, onPromptSelect }: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
 
-  // Filter to only show user prompts
-  const userPrompts = history.filter((item) => item.type === "user");
+  // Get user prompts with their history indices
+  const userPromptsWithIndices = history
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.type === "user");
 
   const handleModify = () => {
     setIsEditing(true);
@@ -52,10 +56,14 @@ export default function PromptPanel({ history, onSend, isLoading }: PromptPanelP
     <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-y-auto">
       <div className="flex flex-col gap-2">
         {/* Display all user prompts as text with small gaps */}
-        {userPrompts.map((item, index) => (
+        {userPromptsWithIndices.map(({ item, index: historyIndex }) => (
           <div
-            key={index}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            key={historyIndex}
+            onClick={() => onPromptSelect(historyIndex)}
+            className={`cursor-pointer rounded-lg border px-3 py-2 text-xs shadow-sm transition-colors ${selectedPromptIndex === historyIndex
+              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
+              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+              } dark:text-gray-200`}
           >
             {item.content}
           </div>

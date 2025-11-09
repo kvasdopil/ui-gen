@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FaSpinner, FaMagic } from "react-icons/fa";
 import PromptPanel from "./PromptPanel";
 
@@ -9,11 +9,37 @@ type HistoryItem = {
   content: string;
 };
 
-export default function Screen() {
+type ScreenData = {
+  id: string;
+  htmlContent: string;
+  history: HistoryItem[];
+  selectedPromptIndex: number | null;
+};
+
+interface ScreenProps {
+  id: string;
+  isSelected: boolean;
+  onScreenClick: (screenId: string) => void;
+  onCreate: (screenData: Omit<ScreenData, "id">) => void;
+  onUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
+  screenData: ScreenData | null;
+}
+
+export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpdate, screenData }: ScreenProps) {
   const [input, setInput] = useState("");
-  const [htmlContent, setHtmlContent] = useState("");
+  const [htmlContent, setHtmlContent] = useState(screenData?.htmlContent || "");
   const [isLoading, setIsLoading] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>(screenData?.history || []);
+  const [selectedPromptIndex, setSelectedPromptIndex] = useState<number | null>(screenData?.selectedPromptIndex ?? null);
+
+  // Sync with external screenData when it changes
+  useEffect(() => {
+    if (screenData) {
+      setHtmlContent(screenData.htmlContent);
+      setHistory(screenData.history);
+      setSelectedPromptIndex(screenData.selectedPromptIndex);
+    }
+  }, [screenData]);
 
   const handleSend = async (modificationPrompt?: string) => {
     const promptToSend = modificationPrompt || input;
@@ -43,7 +69,44 @@ export default function Screen() {
 
       // Wrap the generated HTML with Tailwind CDN and Font Awesome
       // Load Tailwind script and Font Awesome CSS and ensure they process the content
-      const fullHtml = `<!DOCTYPE html>
+      const fullHtml = wrapHtmlWithTailwind(data.html);
+      setHtmlContent(fullHtml);
+
+      // Select the newly created prompt
+      const newSelectedPromptIndex = newHistory.length - 1;
+      setSelectedPromptIndex(newSelectedPromptIndex);
+
+      // Update or create screen data
+      if (screenData) {
+        // Update existing screen
+        onUpdate(id, {
+          htmlContent: fullHtml,
+          history: updatedHistory,
+          selectedPromptIndex: newSelectedPromptIndex,
+        });
+      } else {
+        // Create new screen
+        onCreate({
+          htmlContent: fullHtml,
+          history: updatedHistory,
+          selectedPromptIndex: newSelectedPromptIndex,
+        });
+      }
+
+      // Clear input if it was the initial prompt
+      if (!modificationPrompt) {
+        setInput("");
+      }
+    } catch (error) {
+      console.error("Error generating UI:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to wrap HTML with Tailwind and Font Awesome
+  const wrapHtmlWithTailwind = (html: string) => {
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -57,7 +120,7 @@ export default function Screen() {
   </style>
 </head>
 <body>
-  ${data.html}
+  ${html}
   <script>
     // Ensure Tailwind processes the content
     (function() {
@@ -73,36 +136,67 @@ export default function Screen() {
   </script>
 </body>
 </html>`;
+  };
 
+  // Handle prompt selection - find and display the corresponding assistant response
+  const handlePromptSelect = (historyIndex: number) => {
+    setSelectedPromptIndex(historyIndex);
+
+    // Find the assistant response that comes after this user prompt
+    // The assistant response should be at historyIndex + 1
+    const assistantIndex = historyIndex + 1;
+    if (assistantIndex < history.length && history[assistantIndex].type === "assistant") {
+      const assistantContent = history[assistantIndex].content;
+      const fullHtml = wrapHtmlWithTailwind(assistantContent);
       setHtmlContent(fullHtml);
-
-      // Clear input if it was the initial prompt
-      if (!modificationPrompt) {
-        setInput("");
+      
+      // Update screen data
+      if (screenData) {
+        onUpdate(id, {
+          htmlContent: fullHtml,
+          selectedPromptIndex: historyIndex,
+        });
       }
-    } catch (error) {
-      console.error("Error generating UI:", error);
-    } finally {
-      setIsLoading(false);
+    }
+  };
+
+  // Handle screen container click
+  const handleContainerClick = (e: React.MouseEvent) => {
+    // Only handle clicks if not selected, and stop propagation to prevent panning
+    if (!isSelected) {
+      e.stopPropagation();
+      onScreenClick(id);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen flex-1 items-center justify-center bg-gradient-to-br from-sky-50 via-white to-slate-100 px-6 text-slate-900 dark:from-slate-900 dark:via-slate-950 dark:to-neutral-900 dark:text-slate-100">
+    <div 
+      className="relative flex items-center justify-center px-6 text-slate-900 dark:text-slate-100"
+    >
       {/* Wrapper for Screen and Input - positioned relative to each other */}
       <div className="relative" style={{ width: "390px", height: "844px" }}>
-        {/* Prompt Panel - positioned at top-right, outside Screen container */}
-        {history.length > 0 && (
-          <PromptPanel history={history} onSend={handleSend} isLoading={isLoading} />
+        {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
+        {isSelected && history.length > 0 && (
+          <PromptPanel
+            history={history}
+            onSend={handleSend}
+            isLoading={isLoading}
+            selectedPromptIndex={selectedPromptIndex}
+            onPromptSelect={handlePromptSelect}
+          />
         )}
 
         {/* Screen Container with Iframe */}
         <div
-          className="border-border relative flex border shadow-lg"
+          className="border-border relative flex shadow-lg transition-all"
           style={{
             width: "390px",
             height: "844px",
+            border: isSelected ? '2px solid #3b82f6' : '1px solid hsl(var(--border))',
+            pointerEvents: isSelected ? 'auto' : 'auto', // Always allow clicks for selection
+            cursor: isSelected ? 'default' : 'pointer',
           }}
+          onClick={handleContainerClick}
         >
           {/* Loading Spinner Overlay - only covers Screen component */}
           {isLoading && (
@@ -121,9 +215,13 @@ export default function Screen() {
               srcDoc={htmlContent}
               className="h-full w-full border-0"
               sandbox="allow-same-origin allow-scripts"
+              style={{ pointerEvents: isSelected ? 'auto' : 'none' }}
             />
           ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-white p-6">
+            <div 
+              className="flex h-full w-full flex-col items-center justify-center gap-4 bg-white p-6"
+              style={{ pointerEvents: 'auto' }}
+            >
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

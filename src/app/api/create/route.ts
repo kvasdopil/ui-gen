@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
     const finalPrompt = lastUserMessage
       ? conversationPrompt +
-        `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
+      `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
       : conversationPrompt;
 
     // Initialize Gemini model using Vercel AI SDK
