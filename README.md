@@ -14,6 +14,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🔄 **Follow-up Modifications**: Iteratively refine designs by modifying previous prompts with full conversation context
 - 📜 **Conversation History**: View all previous prompts in a history panel with the ability to modify and regenerate
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
+- 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
 - ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
@@ -74,6 +75,11 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** click any prompt in the history panel, **so that** I can view the LLM output that was generated for that prompt
 - **As a** user, **I want to** see which prompt is currently selected with visual highlighting, **so that** I know which output I'm viewing
 - **As a** user, **I want to** browse through output history by clicking different prompts, **so that** I can compare different versions of the generated UI
+- **As a** user, **I want to** delete conversation points from history, **so that** I can clean up unwanted entries
+- **As a** user, **I want to** see a delete icon appear when hovering over the last history entry, **so that** I can easily remove it
+- **As a** user, **I want to** confirm before deleting a history entry, **so that** I don't accidentally lose my work
+- **As a** user, **I want** the previous entry to be selected automatically when I delete the currently selected entry, **so that** I can continue viewing history seamlessly
+- **As a** user, **I want** the entire screen to be removed when I delete the last remaining history entry, **so that** empty screens don't clutter my workspace
 - **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
 - **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
 - **As a** user, **I want** my modification prompts to appear in history immediately when I send them, **so that** I can see what I requested while the UI is being generated
@@ -221,6 +227,17 @@ yarn dev
 4. The Screen panel will display the UI that was generated for the selected prompt
 5. You can click different prompts to browse through your output history and compare different versions
 
+### Deleting History Entries
+
+1. Select a screen to see its prompt history panel
+2. Hover over the last entry in the history to reveal a gray delete icon on the right
+3. Hover over the delete icon to see the entry highlight in red
+4. Click the delete icon to open a confirmation dialog
+5. Confirm deletion to remove the entry from history
+6. If you delete the currently selected entry, the previous entry will be automatically selected
+7. If you delete the last remaining entry, the entire screen will be removed
+8. All changes are saved immediately to persistent storage
+
 ### Making Modifications
 
 1. Select a screen to see its prompt history panel on the right
@@ -313,14 +330,22 @@ The `/api/create` endpoint:
   - Shows PromptPanel only when screen is selected
   - Handles screen click events for selection
   - Displays "No content" message when screen has no HTML
+  - Handles deletion of conversation points with automatic selection adjustment
+  - Removes entire screen when last conversation point is deleted
+  - Persists all changes immediately via onUpdate callback
 - **PromptPanel.tsx**: History panel component displaying conversation and modification interface
   - Displays all conversation points (prompts) as clickable cards
   - Highlights the currently selected prompt with blue border and background
   - Allows clicking prompts to view their corresponding HTML outputs
+  - Shows delete icon on hover for the last history entry
+  - Delete icon appears gray by default, turns red on hover
+  - Hovering delete icon highlights the entry with red border and background
+  - Provides confirmation dialog before deleting entries
   - Provides "Modify" button to enter modification mode
   - Shows modification input field with "Create" button when in edit mode
   - Handles canceling edit mode when input field loses focus and is empty
   - Only visible when parent screen is selected
+  - All entries maintain consistent width (space reserved for delete icon)
 
 - Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
 

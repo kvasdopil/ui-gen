@@ -11,6 +11,7 @@ interface ScreenProps {
   onScreenClick: (screenId: string) => void;
   onCreate: (screenData: Omit<ScreenData, "id">) => void;
   onUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
+  onDelete: (screenId: string) => void;
   screenData: ScreenData | null;
 }
 
@@ -20,6 +21,7 @@ export default function Screen({
   onScreenClick,
   onCreate,
   onUpdate,
+  onDelete,
   screenData,
 }: ScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -310,6 +312,44 @@ export default function Screen({
     }
   };
 
+  // Handle conversation point deletion
+  const handleDeletePoint = (pointIndex: number) => {
+    if (pointIndex < 0 || pointIndex >= conversationPoints.length) return;
+
+    // If it's the last remaining point, delete the entire screen
+    if (conversationPoints.length === 1) {
+      onDelete(id);
+      return;
+    }
+
+    // Remove the point at the specified index
+    const newPoints = [
+      ...conversationPoints.slice(0, pointIndex),
+      ...conversationPoints.slice(pointIndex + 1),
+    ];
+
+    // Adjust selectedPromptIndex if needed
+    let newSelectedIndex: number | null = selectedPromptIndex;
+    if (selectedPromptIndex === pointIndex) {
+      // If deleting the selected entry, select the previous one
+      newSelectedIndex = pointIndex > 0 ? pointIndex - 1 : null;
+    } else if (selectedPromptIndex !== null && selectedPromptIndex > pointIndex) {
+      // If deleting an entry before the selected one, adjust the index
+      newSelectedIndex = selectedPromptIndex - 1;
+    }
+
+    setConversationPoints(newPoints);
+    setSelectedPromptIndex(newSelectedIndex);
+
+    // Update screen data immediately
+    if (screenData) {
+      onUpdate(id, {
+        conversationPoints: newPoints,
+        selectedPromptIndex: newSelectedIndex,
+      });
+    }
+  };
+
   // Handle screen container click
   const handleContainerClick = (e: React.MouseEvent) => {
     // Only handle clicks if not selected, and stop propagation to prevent panning
@@ -338,6 +378,7 @@ export default function Screen({
             isLoading={isLoading}
             selectedPromptIndex={selectedPromptIndex}
             onPromptSelect={handlePromptSelect}
+            onDeletePoint={handleDeletePoint}
           />
         )}
 

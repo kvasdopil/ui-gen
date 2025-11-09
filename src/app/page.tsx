@@ -434,6 +434,15 @@ export default function Home() {
     // Disabled: centerAndZoomScreen(screenId);
   };
 
+  // Handle screen deletion
+  const handleScreenDelete = useCallback((screenId: string) => {
+    setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
+    // Deselect if the deleted screen was selected
+    if (selectedScreenId === screenId) {
+      setSelectedScreenId(null);
+    }
+  }, [selectedScreenId]);
+
   // Effect to center screen after selection - DISABLED
   // useEffect(() => {
   //   if (selectedScreenId) {
@@ -562,6 +571,7 @@ export default function Home() {
               onScreenClick={handleScreenClick}
               onCreate={handleScreenCreate}
               onUpdate={handleScreenUpdate}
+              onDelete={handleScreenDelete}
               screenData={screen}
             />
           </div>
