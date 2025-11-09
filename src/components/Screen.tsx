@@ -1,20 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { FaSpinner, FaMagic } from "react-icons/fa";
+import { useState, useEffect, useRef } from "react";
+import { FaSpinner } from "react-icons/fa";
 import PromptPanel from "./PromptPanel";
-
-type HistoryItem = {
-  type: "user" | "assistant";
-  content: string;
-};
-
-type ScreenData = {
-  id: string;
-  htmlContent: string;
-  history: HistoryItem[];
-  selectedPromptIndex: number | null;
-};
+import type { ScreenData, ConversationPoint } from "@/lib/types";
 
 interface ScreenProps {
   id: string;
@@ -33,13 +22,14 @@ export default function Screen({
   onUpdate,
   screenData,
 }: ScreenProps) {
-  const [input, setInput] = useState("");
-  const [htmlContent, setHtmlContent] = useState(screenData?.htmlContent || "");
   const [isLoading, setIsLoading] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>(screenData?.history || []);
+  const [conversationPoints, setConversationPoints] = useState<ConversationPoint[]>(
+    screenData?.conversationPoints || [],
+  );
   const [selectedPromptIndex, setSelectedPromptIndex] = useState<number | null>(
     screenData?.selectedPromptIndex ?? null,
   );
+  const generationInProgressRef = useRef<string | null>(null);
 
   // Extract title from HTML content
   const extractTitle = (html: string): string | null => {
@@ -50,99 +40,6 @@ export default function Screen({
       return titleMatch[1].trim();
     }
     return null;
-  };
-
-  const screenTitle = extractTitle(htmlContent);
-
-  // Sync with external screenData when it changes
-  useEffect(() => {
-    if (screenData) {
-      setHtmlContent(screenData.htmlContent);
-      setHistory(screenData.history);
-      setSelectedPromptIndex(screenData.selectedPromptIndex);
-    }
-  }, [screenData]);
-
-  // Auto-start generation if screenData has history but no htmlContent
-  useEffect(() => {
-    if (screenData && screenData.history.length > 0 && !screenData.htmlContent && !isLoading) {
-      // Find the first user prompt that doesn't have a corresponding assistant response
-      const lastItem = screenData.history[screenData.history.length - 1];
-      if (lastItem.type === "user") {
-        // Start generation with this prompt
-        handleSend(lastItem.content);
-      }
-    }
-  }, [screenData, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSend = async (modificationPrompt?: string) => {
-    const promptToSend = modificationPrompt || input;
-    if (!promptToSend.trim()) return;
-
-    // Check if this prompt is already the last item in history
-    const lastHistoryItem = history[history.length - 1];
-    const isAlreadyInHistory =
-      lastHistoryItem?.type === "user" && lastHistoryItem.content === promptToSend;
-
-    // Add user prompt to history immediately (only if not already there)
-    const newHistory = isAlreadyInHistory
-      ? history
-      : [...history, { type: "user" as const, content: promptToSend }];
-    setHistory(newHistory);
-
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history: newHistory }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to generate UI");
-      }
-
-      const data = await response.json();
-
-      // Add assistant response to history
-      const updatedHistory = [...newHistory, { type: "assistant" as const, content: data.html }];
-      setHistory(updatedHistory);
-
-      // Wrap the generated HTML with Tailwind CDN and Font Awesome
-      // Load Tailwind script and Font Awesome CSS and ensure they process the content
-      const fullHtml = wrapHtmlWithTailwind(data.html);
-      setHtmlContent(fullHtml);
-
-      // Select the newly created prompt
-      const newSelectedPromptIndex = newHistory.length - 1;
-      setSelectedPromptIndex(newSelectedPromptIndex);
-
-      // Update or create screen data
-      if (screenData) {
-        // Update existing screen
-        onUpdate(id, {
-          htmlContent: fullHtml,
-          history: updatedHistory,
-          selectedPromptIndex: newSelectedPromptIndex,
-        });
-      } else {
-        // Create new screen
-        onCreate({
-          htmlContent: fullHtml,
-          history: updatedHistory,
-          selectedPromptIndex: newSelectedPromptIndex,
-        });
-      }
-
-      // Clear input if it was the initial prompt
-      if (!modificationPrompt) {
-        setInput("");
-      }
-    } catch (error) {
-      console.error("Error generating UI:", error);
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   // Helper function to wrap HTML with Tailwind and Font Awesome
@@ -179,23 +76,151 @@ export default function Screen({
 </html>`;
   };
 
-  // Handle prompt selection - find and display the corresponding assistant response
-  const handlePromptSelect = (historyIndex: number) => {
-    setSelectedPromptIndex(historyIndex);
+  // Get current HTML content from selected conversation point
+  const getCurrentHtmlContent = (): string => {
+    if (selectedPromptIndex !== null && conversationPoints[selectedPromptIndex]) {
+      return wrapHtmlWithTailwind(conversationPoints[selectedPromptIndex].html);
+    }
+    // If no selection, use the last conversation point
+    if (conversationPoints.length > 0) {
+      return wrapHtmlWithTailwind(conversationPoints[conversationPoints.length - 1].html);
+    }
+    return "";
+  };
 
-    // Find the assistant response that comes after this user prompt
-    // The assistant response should be at historyIndex + 1
-    const assistantIndex = historyIndex + 1;
-    if (assistantIndex < history.length && history[assistantIndex].type === "assistant") {
-      const assistantContent = history[assistantIndex].content;
-      const fullHtml = wrapHtmlWithTailwind(assistantContent);
-      setHtmlContent(fullHtml);
+  const htmlContent = getCurrentHtmlContent();
+  const screenTitle =
+    selectedPromptIndex !== null && conversationPoints[selectedPromptIndex]
+      ? conversationPoints[selectedPromptIndex].title
+      : conversationPoints.length > 0
+        ? conversationPoints[conversationPoints.length - 1].title
+        : null;
+
+  // Sync with external screenData when it changes
+  useEffect(() => {
+    if (screenData) {
+      setConversationPoints(screenData.conversationPoints);
+      setSelectedPromptIndex(screenData.selectedPromptIndex);
+    }
+  }, [screenData]);
+
+  // Auto-start generation if screenData has conversation points but last one doesn't have HTML
+  useEffect(() => {
+    if (
+      screenData &&
+      screenData.conversationPoints.length > 0 &&
+      !isLoading
+    ) {
+      const lastPoint = screenData.conversationPoints[screenData.conversationPoints.length - 1];
+      // If last point has a prompt but no HTML, it means generation needs to start
+      if (lastPoint.prompt && !lastPoint.html) {
+        // Create a unique key for this generation attempt
+        const generationKey = `${lastPoint.prompt}-${lastPoint.timestamp}`;
+        
+        // Only trigger if we haven't already started generation for this point
+        if (generationInProgressRef.current !== generationKey) {
+          generationInProgressRef.current = generationKey;
+          handleSend(lastPoint.prompt);
+        }
+      } else {
+        // Reset ref if the point has HTML (generation completed)
+        generationInProgressRef.current = null;
+      }
+    }
+  }, [screenData, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Convert conversation points to history format for API
+  // Only include points that have HTML (completed generations)
+  const conversationPointsToHistory = (points: ConversationPoint[]) => {
+    const history: Array<{ type: "user" | "assistant"; content: string }> = [];
+    for (const point of points) {
+      // Only include completed conversation points (those with HTML)
+      if (point.html) {
+        history.push({ type: "user", content: point.prompt });
+        history.push({ type: "assistant", content: point.html });
+      }
+    }
+    return history;
+  };
+
+  const handleSend = async (modificationPrompt: string) => {
+    if (!modificationPrompt.trim()) return;
+    const promptToSend = modificationPrompt;
+
+    setIsLoading(true);
+    try {
+      // Convert existing conversation points to history format for API
+      // Only include completed points (those with HTML)
+      const historyForApi = conversationPointsToHistory(conversationPoints);
+      
+      // Add the new user prompt to the history for the API
+      historyForApi.push({ type: "user", content: promptToSend });
+
+      const response = await fetch("/api/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ history: historyForApi }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate UI");
+      }
+
+      const data = await response.json();
+
+      // Extract title from HTML
+      const title = extractTitle(data.html);
+
+      // Create the completed conversation point with HTML and title
+      const completedPoint: ConversationPoint = {
+        prompt: promptToSend,
+        html: data.html,
+        title,
+        timestamp: Date.now(),
+      };
+
+      const finalPoints = [...conversationPoints, completedPoint];
+      setConversationPoints(finalPoints);
+
+      // Reset generation tracking since we've completed
+      generationInProgressRef.current = null;
+
+      // Select the newly created prompt
+      const newSelectedPromptIndex = finalPoints.length - 1;
+      setSelectedPromptIndex(newSelectedPromptIndex);
+
+      // Update or create screen data
+      if (screenData) {
+        // Update existing screen
+        onUpdate(id, {
+          conversationPoints: finalPoints,
+          selectedPromptIndex: newSelectedPromptIndex,
+        });
+      } else {
+        // Create new screen
+        onCreate({
+          conversationPoints: finalPoints,
+          selectedPromptIndex: newSelectedPromptIndex,
+        });
+      }
+    } catch (error) {
+      console.error("Error generating UI:", error);
+      // Reset generation tracking on error so it can be retried
+      generationInProgressRef.current = null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle prompt selection - display the corresponding conversation point
+  const handlePromptSelect = (pointIndex: number) => {
+    if (pointIndex >= 0 && pointIndex < conversationPoints.length) {
+      setSelectedPromptIndex(pointIndex);
 
       // Update screen data
       if (screenData) {
         onUpdate(id, {
-          htmlContent: fullHtml,
-          selectedPromptIndex: historyIndex,
+          selectedPromptIndex: pointIndex,
         });
       }
     }
@@ -222,9 +247,9 @@ export default function Screen({
       {/* Wrapper for Screen and Input - positioned relative to each other */}
       <div className="relative" style={{ width: "390px", height: "844px" }}>
         {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
-        {isSelected && history.length > 0 && (
+        {isSelected && conversationPoints.length > 0 && (
           <PromptPanel
-            history={history}
+            conversationPoints={conversationPoints}
             onSend={handleSend}
             isLoading={isLoading}
             selectedPromptIndex={selectedPromptIndex}
@@ -264,32 +289,8 @@ export default function Screen({
               style={{ pointerEvents: isSelected ? "auto" : "none" }}
             />
           ) : (
-            <div
-              className="flex h-full w-full flex-col items-center justify-center gap-4 bg-white p-6"
-              style={{ pointerEvents: "auto" }}
-            >
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Describe the UI you want..."
-                rows={6}
-                className="w-full resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                disabled={isLoading}
-              />
-              <button
-                onClick={() => handleSend()}
-                disabled={isLoading || !input.trim()}
-                className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-white shadow-lg transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FaMagic />
-                <span>Create</span>
-              </button>
+            <div className="flex h-full w-full items-center justify-center bg-white">
+              <div className="text-sm text-gray-400">No content</div>
             </div>
           )}
         </div>

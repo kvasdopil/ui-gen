@@ -3,17 +3,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FaMagic } from "react-icons/fa";
 import Screen from "@/components/Screen";
-
-type ScreenData = {
-  id: string;
-  htmlContent: string;
-  history: Array<{ type: "user" | "assistant"; content: string }>;
-  selectedPromptIndex: number | null;
-  position?: { x: number; y: number };
-};
+import type { ScreenData } from "@/lib/types";
+import { storage } from "@/lib/storage";
 
 export default function Home() {
   const [screens, setScreens] = useState<ScreenData[]>([]);
+  const [isLoadingScreens, setIsLoadingScreens] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [viewportTransform, setViewportTransform] = useState({ x: 0, y: 0, scale: 1 });
   const [isDragging, setIsDragging] = useState(false);
@@ -126,25 +121,40 @@ export default function Home() {
   };
 
   // Handle zooming with scroll (10% to 100%)
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY * -0.001;
-    const newScale = Math.min(Math.max(0.1, viewportTransform.scale + delta), 1);
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY * -0.001;
+      const newScale = Math.min(Math.max(0.1, viewportTransform.scale + delta), 1);
 
-    // Zoom towards mouse position
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (rect) {
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+      // Zoom towards mouse position
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect) {
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
 
-      const scaleChange = newScale / viewportTransform.scale;
-      setViewportTransform({
-        x: mouseX - (mouseX - viewportTransform.x) * scaleChange,
-        y: mouseY - (mouseY - viewportTransform.y) * scaleChange,
-        scale: newScale,
-      });
-    }
-  };
+        const scaleChange = newScale / viewportTransform.scale;
+        setViewportTransform({
+          x: mouseX - (mouseX - viewportTransform.x) * scaleChange,
+          y: mouseY - (mouseY - viewportTransform.y) * scaleChange,
+          scale: newScale,
+        });
+      }
+    },
+    [viewportTransform],
+  );
+
+  // Add wheel event listener with passive: false to allow preventDefault
+  useEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      element.removeEventListener("wheel", handleWheel);
+    };
+  }, [handleWheel]);
 
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
@@ -236,12 +246,13 @@ export default function Home() {
         position: screenData.position || { x: 0, y: 0 },
       };
       setScreens((prevScreens) => [...prevScreens, newScreen]);
-      setSelectedScreenId(newScreen.id);
+      // Don't auto-select - let user click to select if they want
+      // setSelectedScreenId(newScreen.id);
 
-      // Center and zoom to 100% for the new screen
-      centerAndZoomScreen(newScreen.id);
+      // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
+      // centerAndZoomScreen(newScreen.id);
     },
-    [centerAndZoomScreen],
+    [],
   );
 
   // Handle creating a new screen from the form
@@ -253,29 +264,34 @@ export default function Home() {
     const contentX = (newScreenPosition.x - viewportTransform.x) / viewportTransform.scale;
     const contentY = (newScreenPosition.y - viewportTransform.y) / viewportTransform.scale;
 
-    // Create initial history with the user prompt
-    const initialHistory = [{ type: "user" as const, content: newScreenInput.trim() }];
+    // Create initial conversation point with the user prompt (HTML will be added after generation)
+    const initialConversationPoint = {
+      prompt: newScreenInput.trim(),
+      html: "",
+      title: null,
+      timestamp: Date.now(),
+    };
 
-    // Create the screen with initial history (will trigger generation)
+    // Create the screen with initial conversation point (will trigger generation)
     const timestamp = Date.now();
     const newScreen: ScreenData = {
       id: `screen-${timestamp}`,
-      htmlContent: "",
-      history: initialHistory,
+      conversationPoints: [initialConversationPoint],
       selectedPromptIndex: 0,
       position: { x: contentX, y: contentY },
     };
 
     setScreens((prevScreens) => [...prevScreens, newScreen]);
-    setSelectedScreenId(newScreen.id);
+    // Don't auto-select - let user click to select if they want
+    // setSelectedScreenId(newScreen.id);
 
     // Close the form and clear input
     setIsNewScreenMode(false);
     setNewScreenInput("");
 
-    // Center and zoom to 100% for the new screen
-    centerAndZoomScreen(newScreen.id);
-  }, [newScreenInput, newScreenPosition, viewportTransform, centerAndZoomScreen]);
+    // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
+    // centerAndZoomScreen(newScreen.id);
+  }, [newScreenInput, newScreenPosition, viewportTransform]);
 
   // Handle screen update
   const handleScreenUpdate = (screenId: string, updates: Partial<ScreenData>) => {
@@ -297,6 +313,33 @@ export default function Home() {
     }
   }, [selectedScreenId, centerAndZoomScreen]);
 
+  // Load screens from storage on mount
+  useEffect(() => {
+    const loadScreens = async () => {
+      try {
+        const loadedScreens = await storage.loadScreens();
+        if (loadedScreens.length > 0) {
+          setScreens(loadedScreens);
+        }
+      } catch (error) {
+        console.error("Error loading screens:", error);
+      } finally {
+        setIsLoadingScreens(false);
+      }
+    };
+
+    loadScreens();
+  }, []);
+
+  // Save screens to storage whenever they change
+  useEffect(() => {
+    if (!isLoadingScreens && screens.length >= 0) {
+      storage.saveScreens(screens).catch((error) => {
+        console.error("Error saving screens:", error);
+      });
+    }
+  }, [screens, isLoadingScreens]);
+
   return (
     <div
       ref={viewportRef}
@@ -305,7 +348,6 @@ export default function Home() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
       style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
       <div
@@ -315,50 +357,35 @@ export default function Home() {
           transformOrigin: "0 0",
         }}
       >
-        {screens.length === 0 ? (
+        {screens.map((screen, index) => {
+          // Selected screens appear on top, then newer screens
+          const zIndex = selectedScreenId === screen.id 
+            ? screens.length + 1000 
+            : index + 1;
+          
+          return (
           <div
-            id="initial-screen"
+            key={screen.id}
+            id={screen.id}
             data-screen-container
             style={{
               position: "absolute",
-              left: "50%",
-              top: "50%",
+              left: screen.position ? `${screen.position.x}px` : "0px",
+              top: screen.position ? `${screen.position.y}px` : "0px",
               transform: "translate(-50%, -50%)",
+              zIndex,
             }}
           >
             <Screen
-              id="initial-screen"
-              isSelected={false}
-              onScreenClick={() => {}}
+              id={screen.id}
+              isSelected={selectedScreenId === screen.id}
+              onScreenClick={handleScreenClick}
               onCreate={handleScreenCreate}
               onUpdate={handleScreenUpdate}
-              screenData={null}
+              screenData={screen}
             />
           </div>
-        ) : (
-          screens.map((screen) => (
-            <div
-              key={screen.id}
-              id={screen.id}
-              data-screen-container
-              style={{
-                position: "absolute",
-                left: screen.position ? `${screen.position.x}px` : "0px",
-                top: screen.position ? `${screen.position.y}px` : "0px",
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              <Screen
-                id={screen.id}
-                isSelected={selectedScreenId === screen.id}
-                onScreenClick={handleScreenClick}
-                onCreate={handleScreenCreate}
-                onUpdate={handleScreenUpdate}
-                screenData={screen}
-              />
-            </div>
-          ))
-        )}
+        )})}
       </div>
 
       {/* New Screen Form - positioned absolutely in viewport coordinates */}

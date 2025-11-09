@@ -2,22 +2,18 @@
 
 import { useState } from "react";
 import { FaEdit, FaMagic } from "react-icons/fa";
-
-type HistoryItem = {
-  type: "user" | "assistant";
-  content: string;
-};
+import type { ConversationPoint } from "@/lib/types";
 
 interface PromptPanelProps {
-  history: HistoryItem[];
+  conversationPoints: ConversationPoint[];
   onSend: (modificationPrompt: string) => void;
   isLoading: boolean;
   selectedPromptIndex: number | null;
-  onPromptSelect: (historyIndex: number) => void;
+  onPromptSelect: (pointIndex: number) => void;
 }
 
 export default function PromptPanel({
-  history,
+  conversationPoints,
   onSend,
   isLoading,
   selectedPromptIndex,
@@ -25,11 +21,6 @@ export default function PromptPanel({
 }: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
-
-  // Get user prompts with their history indices
-  const userPromptsWithIndices = history
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.type === "user");
 
   const handleModify = () => {
     setIsEditing(true);
@@ -61,18 +52,18 @@ export default function PromptPanel({
   return (
     <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-y-auto">
       <div className="flex flex-col gap-2">
-        {/* Display all user prompts as text with small gaps */}
-        {userPromptsWithIndices.map(({ item, index: historyIndex }) => (
+        {/* Display all conversation points (prompts) */}
+        {conversationPoints.map((point, index) => (
           <div
-            key={historyIndex}
-            onClick={() => onPromptSelect(historyIndex)}
+            key={index}
+            onClick={() => onPromptSelect(index)}
             className={`cursor-pointer rounded-lg border px-3 py-2 text-xs shadow-sm transition-colors ${
-              selectedPromptIndex === historyIndex
+              selectedPromptIndex === index
                 ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
                 : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700"
             } dark:text-gray-200`}
           >
-            {item.content}
+            {point.prompt}
           </div>
         ))}
 

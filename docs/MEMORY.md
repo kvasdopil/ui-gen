@@ -48,6 +48,31 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Reason**: User can still see and interact with prompt panel during generation
 - **Location**: `src/components/Screen.tsx` (overlay inside Screen container)
 
+### 7. Data Persistence
+
+- **Decision**: Use IndexedDB for client-side persistence with abstraction layer
+- **Reason**: Persist screens, conversations, and generated content without backend dependency
+- **Implementation**: 
+  - Storage abstraction interface in `src/lib/storage.ts`
+  - `IdbStorage` class implementing IndexedDB operations
+  - Auto-save on screen changes, auto-load on mount
+  - Easy to swap for backend persistence later (just implement Storage interface)
+- **Location**: `src/lib/storage.ts`, `src/lib/types.ts`
+
+### 8. Data Structure
+
+- **Decision**: Store conversation points (prompt, HTML, title, timestamp) instead of separate history and HTML
+- **Reason**: Better organization, stores complete metadata for each conversation point
+- **Structure**: `ConversationPoint` type with `prompt`, `html`, `title`, `timestamp`
+- **Location**: `src/lib/types.ts`
+
+### 9. Screen Creation Flow
+
+- **Decision**: No auto-selection or auto-centering when creating screens
+- **Reason**: Prevents viewport disruption when creating multiple screens quickly
+- **Z-Index**: Newer screens appear above older ones; selected screens always on top
+- **Location**: `src/app/page.tsx`
+
 ## Environment Variables
 
 ### Required
@@ -72,20 +97,46 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/components/Screen.tsx`
 - **Key Features**:
-  - Manages `input`, `htmlContent`, and `isLoading` state
+  - Manages `conversationPoints` state (array of ConversationPoint objects)
   - Extracts screen title from HTML metadata (`<!-- Title: ... -->`) and displays it above the screen
   - Wraps generated HTML with full document structure
   - Injects Tailwind CDN and helper scripts
   - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
+  - Auto-starts generation when screen has conversation point without HTML
+  - Uses `generationInProgressRef` to prevent duplicate API calls
+  - Displays "No content" message when screen has no HTML
+  - Shows PromptPanel only when screen is selected
 
 ### Prompt Panel
 
 - **File**: `src/components/PromptPanel.tsx`
 - **Key Features**:
-  - Multiline textarea (6 rows)
-  - Ctrl/Cmd+Enter to submit
+  - Displays conversation points (prompts) as clickable cards
+  - Highlights selected prompt with blue border and background
+  - Modification input field with label "What you would like to change"
+  - Ctrl/Cmd+Enter to submit modifications
   - Positioned absolutely to the right of Screen component
   - Uses `left-full ml-2` for positioning
+
+### Storage
+
+- **File**: `src/lib/storage.ts`
+- **Key Features**:
+  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens` methods
+  - `IdbStorage` class implementing IndexedDB operations
+  - Uses `idb` package for IndexedDB wrapper
+  - Database name: `ui-gen-db`, version: 1
+  - Object store: `screens` with key `"all"` storing array of ScreenData
+  - Auto-saves screens whenever they change
+  - Auto-loads screens on mount
+  - Easy to swap for backend persistence (just implement Storage interface)
+
+### Types
+
+- **File**: `src/lib/types.ts`
+- **Key Types**:
+  - `ConversationPoint`: `{ prompt: string, html: string, title: string | null, timestamp: number }`
+  - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number } }`
 
 ## System Prompt
 
@@ -145,6 +196,10 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - `tailwindcss`: ^4 - CSS framework
 - `react-icons`: ^5.5.0 - Icon library
 
+### Storage
+
+- `idb`: Latest - IndexedDB wrapper for client-side persistence
+
 ## File Naming Conventions
 
 - Components: PascalCase (e.g., `Screen.tsx`, `PromptPanel.tsx`)
@@ -157,10 +212,11 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ```typescript
 interface PromptPanelProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSend: () => void;
+  conversationPoints: ConversationPoint[];
+  onSend: (modificationPrompt: string) => void;
   isLoading: boolean;
+  selectedPromptIndex: number | null;
+  onPromptSelect: (pointIndex: number) => void;
 }
 ```
 
@@ -184,20 +240,28 @@ interface PromptPanelProps {
 
 ## Development Workflow
 
-1. User enters prompt in `PromptPanel`
-2. `Screen` component calls `/api/create` with prompt
-3. API endpoint:
+1. User clicks empty space to create new screen
+2. Floating form appears at click location
+3. User enters prompt and clicks "Create"
+4. Screen is created with initial conversation point (prompt, no HTML yet)
+5. `Screen` component auto-detects incomplete conversation point and calls `/api/create`
+6. API endpoint:
    - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
+   - Converts conversation points to history format (only completed points with HTML)
    - Calls Gemini API via Vercel AI SDK
    - Cleans markdown code blocks
    - Returns HTML with title metadata comment
-4. `Screen` component:
+7. `Screen` component:
    - Extracts title from HTML metadata (`<!-- Title: ... -->`)
-   - Displays title above the screen (black, bold text)
+   - Updates conversation point with HTML and title
+   - Displays title above the screen
    - Wraps HTML with document structure
    - Injects Tailwind CDN
    - Sets `srcDoc` on iframe
-5. Iframe renders the generated UI
+8. Screen data is automatically saved to IndexedDB
+9. Iframe renders the generated UI
+10. User can click prompts in history panel to view different versions
+11. User can click "Modify" to add new conversation points
 
 ## Testing Considerations
 
@@ -213,10 +277,13 @@ interface PromptPanelProps {
 1. **Streaming Responses**: Use `streamText` instead of `generateText` for faster perceived performance
 2. **Error Recovery**: Better error messages and retry mechanisms
 3. **UI Export**: Allow users to download generated HTML
-4. **History**: Save and reload previously generated UIs
+4. **Backend Persistence**: Replace IndexedDB with backend API (easy swap via Storage interface)
 5. **Multiple Sizes**: Support different screen sizes beyond 390px × 844px
 6. **Custom Tailwind Config**: Allow users to customize Tailwind settings
 7. **Pre-compiled Tailwind**: Consider using a pre-compiled Tailwind CSS file instead of CDN for better reliability
+8. **Screen Deletion**: Add ability to delete screens
+9. **Screen Reordering**: Add ability to manually reorder screens
+10. **Export All**: Export all screens as a collection
 
 ## Notes for AI Assistants
 
@@ -228,3 +295,11 @@ interface PromptPanelProps {
 - Screen component is 390px × 844px - this is fixed and important for mobile mockups
 - PromptPanel is positioned absolutely relative to Screen component wrapper
 - Loading spinner only covers Screen, not the entire page
+- Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
+- Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - can be swapped for backend easily
+- Screens are auto-saved to IndexedDB on every change, auto-loaded on mount
+- New screens are NOT auto-selected or auto-centered to prevent viewport disruption
+- Z-index: Newer screens appear above older ones; selected screens always on top
+- Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations
+- Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
+- No default screen - page starts empty, user clicks to create first screen

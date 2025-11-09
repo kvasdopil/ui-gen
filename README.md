@@ -18,6 +18,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
 - ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
+- 💾 **Persistent Storage**: All screens, conversations, and generated content are automatically saved to IndexedDB
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
 - 🖱️ **Selectable Screens**: Click any screen to select it, center it, and zoom to 100%
 - 🎨 **Visual Selection**: Selected screens display a 2px blue border
@@ -58,19 +59,18 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 ### User Interface
 
-- **As a** user, **I want to** enter my initial prompt in a centered textarea within the screen container, **so that** I can start generating UIs from a clean slate
-- **As a** user, **I want to** see a "Create" button with a magic icon below the prompt input, **so that** I can easily trigger UI generation
 - **As a** user, **I want to** click anywhere on empty space to create a new screen, **so that** I can quickly add new screens at specific locations
 - **As a** user, **I want to** see a floating form appear at the click location when creating a new screen, **so that** I can enter the prompt for the new screen
 - **As a** user, **I want to** have my input preserved if I cancel the new screen form, **so that** I don't lose my work if I click outside accidentally
 - **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
-- **As a** user, **I want to** see a prompt history panel appear immediately when I send my first prompt, **so that** I can see my conversation history right away
+- **As a** user, **I want to** see a prompt history panel appear when I select a screen, **so that** I can see my conversation history
 - **As a** user, **I want to** see all my previous prompts displayed as read-only text in the history panel, **so that** I can reference my conversation history
 - **As a** user, **I want to** click any prompt in the history panel, **so that** I can view the LLM output that was generated for that prompt
 - **As a** user, **I want to** see which prompt is currently selected with visual highlighting, **so that** I know which output I'm viewing
 - **As a** user, **I want to** browse through output history by clicking different prompts, **so that** I can compare different versions of the generated UI
 - **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
 - **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
+- **As a** user, **I want to** have my screens automatically saved, **so that** I don't lose my work when I refresh the page
 
 ### Error Handling
 
@@ -84,6 +84,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** developer, **I want** the system to maintain full conversation history (user prompts and assistant responses), **so that** modifications can be made with complete context
 - **As a** developer, **I want** the API to accept conversation history and format it properly for the LLM, **so that** follow-up modifications understand the full context
 - **As a** developer, **I want** the API to validate required environment variables, **so that** configuration errors are caught early
+- **As a** developer, **I want** all screens and conversation data to be persisted in IndexedDB, **so that** users don't lose their work
 - **As a** user, **I want** generated UIs to use Font Awesome icons via CDN, **so that** icons render correctly without additional setup
 - **As a** user, **I want** generated UIs to use Unsplash images, **so that** mockups include realistic placeholder images
 
@@ -96,6 +97,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Google Gemini (`@ai-sdk/google`)
+- **Storage**:
+  - IndexedDB (`idb` package) - Client-side persistence
 - **Icons**:
   - React Icons (FontAwesome) - Used in the application UI
   - Font Awesome 6.5.1 CDN - Used in generated UI mockups
@@ -110,16 +113,18 @@ ui-gen/
 │   │   │   └── create/
 │   │   │       └── route.ts          # API endpoint for UI generation
 │   │   ├── layout.tsx                # Root layout
-│   │   ├── page.tsx                  # Home page
+│   │   ├── page.tsx                  # Home page (viewport management)
 │   │   └── globals.css               # Global styles
 │   ├── components/
-│   │   ├── Screen.tsx                # Main screen component with iframe
-│   │   ├── PromptPanel.tsx           # Input panel for user prompts
+│   │   ├── Screen.tsx                 # Individual screen component with iframe
+│   │   ├── PromptPanel.tsx            # History panel and modification interface
 │   │   └── Contents.tsx              # Legacy component (example UI)
-│   ├── prompts/
-│   │   └── generate-ui.ts            # System prompt constant for AI generation
-│   └── lib/
-│       └── utils.ts                  # Utility functions
+│   ├── lib/
+│   │   ├── types.ts                  # TypeScript type definitions
+│   │   ├── storage.ts                # Storage abstraction (IndexedDB)
+│   │   └── utils.ts                  # Utility functions
+│   └── prompts/
+│       └── generate-ui.ts            # System prompt constant for AI generation
 ├── docs/
 │   └── MEMORY.md                     # Development notes and decisions
 └── package.json
@@ -172,13 +177,13 @@ yarn dev
 
 ### Initial Generation
 
-1. When the viewport is empty, you'll see a centered prompt input field
-2. Enter a description of the UI you want to generate
-3. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
-4. The prompt will immediately appear in the history panel on the right (when the screen is selected)
+1. When the viewport is empty, click anywhere on the empty space
+2. A floating form will appear at the click location
+3. Enter a description of the UI you want to generate
+4. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
 5. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
 6. The generated UI will be displayed in a 390px × 844px screen container
-7. The new screen will be automatically selected, centered, and zoomed to 100%
+7. The screen will be created at the location where you clicked
 
 ### Creating New Screens
 
@@ -193,9 +198,10 @@ yarn dev
 1. **Panning**: Press and drag on empty space to pan around the viewport
 2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale)
 3. **Selecting Screens**: Click any screen to select it - it will be centered and zoomed to 100%
-4. **Visual Feedback**: Selected screens display a 2px blue border
+4. **Visual Feedback**: Selected screens display a 2px blue border and appear on top
 5. **Deselecting**: Click on empty space to deselect the current screen
 6. **Prompt Panel**: The prompt history panel only appears when a screen is selected
+7. **Z-Index**: Newer screens appear above older ones; selected screens always appear on top
 
 ### Viewing Output History
 
@@ -267,34 +273,36 @@ The `/api/create` endpoint:
 - **page.tsx**: Main viewport component managing multiple screens, pan/zoom, and selection
   - Manages viewport transform state (pan position and zoom scale)
   - Handles panning via mouse press and drag on empty space
-  - Handles zooming via mouse wheel (10% to 100%)
+  - Handles zooming via mouse wheel (10% to 100%) with non-passive event listener
   - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
   - Centers and zooms selected screens to 100% (works correctly at all zoom levels)
   - Deselects screens when clicking outside
   - Provides new screen creation flow: clicking empty space shows a form, clicking Create creates a screen at that location
   - Preserves form input when canceling the new screen flow
+  - Auto-loads screens from IndexedDB on mount
+  - Auto-saves screens to IndexedDB whenever they change
+  - Z-index management: newer screens appear above older ones, selected screens always on top
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
-  - Handles initial prompt input (centered in screen when empty)
-  - Manages conversation history state for the screen
+  - Manages conversation points state (prompt, HTML, title, timestamp for each point)
   - Tracks selected prompt index for output history viewing
-  - Renders generated UI in iframe based on selected prompt
+  - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
-  - Automatically starts generation when created with initial history (for new screens from form)
-  - Automatically selects newly created prompts after generation
+  - Automatically starts generation when created with initial conversation point (for new screens from form)
+  - Uses ref to prevent duplicate API calls
   - Shows PromptPanel only when screen is selected
   - Handles screen click events for selection
-  - Ignores mouse events when not selected (except for selection clicks)
+  - Displays "No content" message when screen has no HTML
 - **PromptPanel.tsx**: History panel component displaying conversation and modification interface
-  - Displays all user prompts as clickable cards
+  - Displays all conversation points (prompts) as clickable cards
   - Highlights the currently selected prompt with blue border and background
-  - Allows clicking prompts to view their corresponding LLM outputs
+  - Allows clicking prompts to view their corresponding HTML outputs
   - Provides "Modify" button to enter modification mode
   - Shows modification input field with "Create" button when in edit mode
   - Handles canceling edit mode when input field loses focus and is empty
   - Only visible when parent screen is selected
 
-- Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component
+- Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
 
 ## Development
 
@@ -345,7 +353,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 
 - [ ] Support for multiple screen sizes
 - [ ] Export generated UI as image or HTML file
-- [ ] Save/load generated UIs
+- [x] Save/load generated UIs (IndexedDB persistence)
 - [x] View previous UI versions from history (clickable prompts)
 - [x] Multiple conversation branches/screens
 - [x] Pan and zoom viewport
