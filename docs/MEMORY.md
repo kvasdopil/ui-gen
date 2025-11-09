@@ -24,9 +24,9 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 3. API Endpoint Structure
 
-- **Decision**: Single `/api/create` endpoint that reads system prompt from file
-- **Reason**: Keeps prompt management in markdown file, easier to update
-- **Important**: System prompt is read from `docs/GENERATE_UI.md` at runtime
+- **Decision**: Single `/api/create` endpoint that uses system prompt constant
+- **Reason**: Prompt is embedded in codebase as a constant for better performance and bundling
+- **Important**: System prompt is imported from `src/prompts/generate-ui.ts` as `GENERATE_UI_PROMPT` constant
 - **Location**: `src/app/api/create/route.ts`
 
 ### 4. HTML Cleanup
@@ -63,16 +63,17 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/app/api/create/route.ts`
 - **Key Functions**:
-  - Reads `docs/GENERATE_UI.md` as system prompt
+  - Imports `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
   - Uses `gemini-2.5-flash` model with temperature 0.5
   - Cleans markdown code blocks from response
-  - Returns `{ html: string }`
+  - Returns `{ html: string }` with title metadata comment (`<!-- Title: ... -->`)
 
 ### Screen Component
 
 - **File**: `src/components/Screen.tsx`
 - **Key Features**:
   - Manages `input`, `htmlContent`, and `isLoading` state
+  - Extracts screen title from HTML metadata (`<!-- Title: ... -->`) and displays it above the screen
   - Wraps generated HTML with full document structure
   - Injects Tailwind CDN and helper scripts
   - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
@@ -90,18 +91,20 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### Location
 
-- **File**: `docs/GENERATE_UI.md`
+- **File**: `src/prompts/generate-ui.ts`
+- **Constant**: `GENERATE_UI_PROMPT`
 - **Purpose**: Defines how the AI should generate UI mockups
 
 ### Key Requirements (from prompt)
 
 - Generate ONLY page content (no `<!DOCTYPE>`, `<html>`, `<head>`, `<body>` tags)
+- Include title metadata comment at the beginning: `<!-- Title: Your short descriptive title -->`
 - Use HTML with `class` attribute (not JSX `className`)
 - Root element must be `<div class="flex h-full w-full">`
 - Container size: 390px × 844px
 - No JavaScript, no interactive elements
 - Use Tailwind CSS classes exclusively
-- Use SVG icons or icon fonts/CDN
+- Use Font Awesome icons via CDN (no custom SVG)
 - Use Unsplash for images
 
 ## Known Issues & Workarounds
@@ -184,11 +187,13 @@ interface PromptPanelProps {
 1. User enters prompt in `PromptPanel`
 2. `Screen` component calls `/api/create` with prompt
 3. API endpoint:
-   - Reads `GENERATE_UI.md` as system prompt
+   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
    - Calls Gemini API via Vercel AI SDK
    - Cleans markdown code blocks
-   - Returns HTML
+   - Returns HTML with title metadata comment
 4. `Screen` component:
+   - Extracts title from HTML metadata (`<!-- Title: ... -->`)
+   - Displays title above the screen (black, bold text)
    - Wraps HTML with document structure
    - Injects Tailwind CDN
    - Sets `srcDoc` on iframe
@@ -215,8 +220,10 @@ interface PromptPanelProps {
 
 ## Notes for AI Assistants
 
-- Always check `docs/GENERATE_UI.md` when modifying generation logic
+- System prompt is in `src/prompts/generate-ui.ts` as `GENERATE_UI_PROMPT` constant - update this file when modifying generation logic
 - The API endpoint automatically cleans markdown code blocks - don't duplicate this logic
+- Generated HTML includes title metadata (`<!-- Title: ... -->`) which is extracted and displayed above screens
+- Screen component extracts and displays titles from HTML metadata for both active and inactive screens
 - Iframe sandbox must allow scripts for Tailwind to work
 - Screen component is 390px × 844px - this is fixed and important for mobile mockups
 - PromptPanel is positioned absolutely relative to Screen component wrapper

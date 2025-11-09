@@ -1,8 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
-import { readFileSync } from "fs";
-import { join } from "path";
 import { NextRequest, NextResponse } from "next/server";
+import { GENERATE_UI_PROMPT } from "@/prompts/generate-ui";
 
 type HistoryItem = {
   type: "user" | "assistant";
@@ -28,9 +27,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read GENERATE_UI.md as system prompt
-    const generateUIPath = join(process.cwd(), "docs", "GENERATE_UI.md");
-    const systemPrompt = readFileSync(generateUIPath, "utf-8");
+    // Use GENERATE_UI_PROMPT constant as system prompt
+    const systemPrompt = GENERATE_UI_PROMPT;
 
     // Format conversation history for the LLM
     // Build a comprehensive prompt that includes all conversation history
@@ -60,7 +58,7 @@ export async function POST(request: NextRequest) {
 
     const finalPrompt = lastUserMessage
       ? conversationPrompt +
-      `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
+        `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
       : conversationPrompt;
 
     // Initialize Gemini model using Vercel AI SDK

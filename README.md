@@ -22,6 +22,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Selectable Screens**: Click any screen to select it, center it, and zoom to 100%
 - 🎨 **Visual Selection**: Selected screens display a 2px blue border
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
+- 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 
 ## User Stories
 
@@ -53,6 +54,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see a visual indicator (blue border) on selected screens, **so that** I know which screen is active
 - **As a** user, **I want to** click outside screens to deselect them, **so that** I can pan and zoom without interference
 - **As a** user, **I want to** see the prompt panel only when a screen is selected, **so that** the interface stays clean when no screen is active
+- **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
 
 ### User Interface
 
@@ -114,10 +116,11 @@ ui-gen/
 │   │   ├── Screen.tsx                # Main screen component with iframe
 │   │   ├── PromptPanel.tsx           # Input panel for user prompts
 │   │   └── Contents.tsx              # Legacy component (example UI)
+│   ├── prompts/
+│   │   └── generate-ui.ts            # System prompt constant for AI generation
 │   └── lib/
 │       └── utils.ts                  # Utility functions
 ├── docs/
-│   ├── GENERATE_UI.md                # System prompt for AI generation
 │   └── MEMORY.md                     # Development notes and decisions
 └── package.json
 ```
@@ -249,7 +252,7 @@ Generated HTML is rendered in an iframe for:
 The `/api/create` endpoint:
 
 - Accepts a conversation history array (user prompts and assistant responses)
-- Reads `docs/GENERATE_UI.md` as the system prompt
+- Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats the full conversation history for the LLM, including:
   - Original user prompts
   - Previous LLM-generated HTML outputs
@@ -257,6 +260,7 @@ The `/api/create` endpoint:
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
 - Cleans up markdown code blocks from AI responses
 - Returns clean HTML ready for iframe rendering
+- Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`) at the beginning
 
 ### Component Structure
 
@@ -275,6 +279,7 @@ The `/api/create` endpoint:
   - Manages conversation history state for the screen
   - Tracks selected prompt index for output history viewing
   - Renders generated UI in iframe based on selected prompt
+  - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
   - Automatically starts generation when created with initial history (for new screens from form)
   - Automatically selects newly created prompts after generation
   - Shows PromptPanel only when screen is selected

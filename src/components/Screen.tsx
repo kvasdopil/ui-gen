@@ -25,12 +25,34 @@ interface ScreenProps {
   screenData: ScreenData | null;
 }
 
-export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpdate, screenData }: ScreenProps) {
+export default function Screen({
+  id,
+  isSelected,
+  onScreenClick,
+  onCreate,
+  onUpdate,
+  screenData,
+}: ScreenProps) {
   const [input, setInput] = useState("");
   const [htmlContent, setHtmlContent] = useState(screenData?.htmlContent || "");
   const [isLoading, setIsLoading] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(screenData?.history || []);
-  const [selectedPromptIndex, setSelectedPromptIndex] = useState<number | null>(screenData?.selectedPromptIndex ?? null);
+  const [selectedPromptIndex, setSelectedPromptIndex] = useState<number | null>(
+    screenData?.selectedPromptIndex ?? null,
+  );
+
+  // Extract title from HTML content
+  const extractTitle = (html: string): string | null => {
+    if (!html) return null;
+    // Look for <!-- Title: ... --> comment in the HTML
+    const titleMatch = html.match(/<!--\s*Title:\s*([^>]+)-->/);
+    if (titleMatch && titleMatch[1]) {
+      return titleMatch[1].trim();
+    }
+    return null;
+  };
+
+  const screenTitle = extractTitle(htmlContent);
 
   // Sync with external screenData when it changes
   useEffect(() => {
@@ -59,10 +81,13 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
 
     // Check if this prompt is already the last item in history
     const lastHistoryItem = history[history.length - 1];
-    const isAlreadyInHistory = lastHistoryItem?.type === "user" && lastHistoryItem.content === promptToSend;
-    
+    const isAlreadyInHistory =
+      lastHistoryItem?.type === "user" && lastHistoryItem.content === promptToSend;
+
     // Add user prompt to history immediately (only if not already there)
-    const newHistory = isAlreadyInHistory ? history : [...history, { type: "user" as const, content: promptToSend }];
+    const newHistory = isAlreadyInHistory
+      ? history
+      : [...history, { type: "user" as const, content: promptToSend }];
     setHistory(newHistory);
 
     setIsLoading(true);
@@ -165,7 +190,7 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
       const assistantContent = history[assistantIndex].content;
       const fullHtml = wrapHtmlWithTailwind(assistantContent);
       setHtmlContent(fullHtml);
-      
+
       // Update screen data
       if (screenData) {
         onUpdate(id, {
@@ -186,9 +211,14 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
   };
 
   return (
-    <div 
-      className="relative flex items-center justify-center px-6 text-slate-900 dark:text-slate-100"
-    >
+    <div className="relative flex flex-col items-center justify-center px-6 text-slate-900 dark:text-slate-100">
+      {/* Title - displayed above screen for both active and inactive */}
+      {screenTitle && (
+        <div className="mb-2 text-center">
+          <span className="font-bold text-black dark:text-black">{screenTitle}</span>
+        </div>
+      )}
+
       {/* Wrapper for Screen and Input - positioned relative to each other */}
       <div className="relative" style={{ width: "390px", height: "844px" }}>
         {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
@@ -208,9 +238,9 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
           style={{
             width: "390px",
             height: "844px",
-            border: isSelected ? '2px solid #3b82f6' : '1px solid hsl(var(--border))',
-            pointerEvents: isSelected ? 'auto' : 'auto', // Always allow clicks for selection
-            cursor: isSelected ? 'default' : 'pointer',
+            border: isSelected ? "2px solid #3b82f6" : "1px solid hsl(var(--border))",
+            pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
+            cursor: isSelected ? "default" : "pointer",
           }}
           onClick={handleContainerClick}
         >
@@ -231,12 +261,12 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
               srcDoc={htmlContent}
               className="h-full w-full border-0"
               sandbox="allow-same-origin allow-scripts"
-              style={{ pointerEvents: isSelected ? 'auto' : 'none' }}
+              style={{ pointerEvents: isSelected ? "auto" : "none" }}
             />
           ) : (
-            <div 
+            <div
               className="flex h-full w-full flex-col items-center justify-center gap-4 bg-white p-6"
-              style={{ pointerEvents: 'auto' }}
+              style={{ pointerEvents: "auto" }}
             >
               <textarea
                 value={input}

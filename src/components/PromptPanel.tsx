@@ -16,7 +16,13 @@ interface PromptPanelProps {
   onPromptSelect: (historyIndex: number) => void;
 }
 
-export default function PromptPanel({ history, onSend, isLoading, selectedPromptIndex, onPromptSelect }: PromptPanelProps) {
+export default function PromptPanel({
+  history,
+  onSend,
+  isLoading,
+  selectedPromptIndex,
+  onPromptSelect,
+}: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
 
@@ -60,10 +66,11 @@ export default function PromptPanel({ history, onSend, isLoading, selectedPrompt
           <div
             key={historyIndex}
             onClick={() => onPromptSelect(historyIndex)}
-            className={`cursor-pointer rounded-lg border px-3 py-2 text-xs shadow-sm transition-colors ${selectedPromptIndex === historyIndex
-              ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
-              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700"
-              } dark:text-gray-200`}
+            className={`cursor-pointer rounded-lg border px-3 py-2 text-xs shadow-sm transition-colors ${
+              selectedPromptIndex === historyIndex
+                ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
+                : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-600 dark:hover:bg-gray-700"
+            } dark:text-gray-200`}
           >
             {item.content}
           </div>
