@@ -41,12 +41,28 @@ export default function Screen({ id, isSelected, onScreenClick, onCreate, onUpda
     }
   }, [screenData]);
 
+  // Auto-start generation if screenData has history but no htmlContent
+  useEffect(() => {
+    if (screenData && screenData.history.length > 0 && !screenData.htmlContent && !isLoading) {
+      // Find the first user prompt that doesn't have a corresponding assistant response
+      const lastItem = screenData.history[screenData.history.length - 1];
+      if (lastItem.type === "user") {
+        // Start generation with this prompt
+        handleSend(lastItem.content);
+      }
+    }
+  }, [screenData, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSend = async (modificationPrompt?: string) => {
     const promptToSend = modificationPrompt || input;
     if (!promptToSend.trim()) return;
 
-    // Add user prompt to history immediately
-    const newHistory = [...history, { type: "user" as const, content: promptToSend }];
+    // Check if this prompt is already the last item in history
+    const lastHistoryItem = history[history.length - 1];
+    const isAlreadyInHistory = lastHistoryItem?.type === "user" && lastHistoryItem.content === promptToSend;
+    
+    // Add user prompt to history immediately (only if not already there)
+    const newHistory = isAlreadyInHistory ? history : [...history, { type: "user" as const, content: promptToSend }];
     setHistory(newHistory);
 
     setIsLoading(true);

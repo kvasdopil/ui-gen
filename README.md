@@ -16,7 +16,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
-- 🔍 **Pan & Zoom Viewport**: Drag to pan and scroll to zoom (10% to 100%) the viewport
+- ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
+- 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
+- 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
 - 🖱️ **Selectable Screens**: Click any screen to select it, center it, and zoom to 100%
 - 🎨 **Visual Selection**: Selected screens display a 2px blue border
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
@@ -56,6 +58,10 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 - **As a** user, **I want to** enter my initial prompt in a centered textarea within the screen container, **so that** I can start generating UIs from a clean slate
 - **As a** user, **I want to** see a "Create" button with a magic icon below the prompt input, **so that** I can easily trigger UI generation
+- **As a** user, **I want to** click anywhere on empty space to create a new screen, **so that** I can quickly add new screens at specific locations
+- **As a** user, **I want to** see a floating form appear at the click location when creating a new screen, **so that** I can enter the prompt for the new screen
+- **As a** user, **I want to** have my input preserved if I cancel the new screen form, **so that** I don't lose my work if I click outside accidentally
+- **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
 - **As a** user, **I want to** see a prompt history panel appear immediately when I send my first prompt, **so that** I can see my conversation history right away
 - **As a** user, **I want to** see all my previous prompts displayed as read-only text in the history panel, **so that** I can reference my conversation history
 - **As a** user, **I want to** click any prompt in the history panel, **so that** I can view the LLM output that was generated for that prompt
@@ -171,9 +177,17 @@ yarn dev
 6. The generated UI will be displayed in a 390px × 844px screen container
 7. The new screen will be automatically selected, centered, and zoomed to 100%
 
+### Creating New Screens
+
+1. **Click on Empty Space**: Click anywhere on empty space (not on an existing screen) to initiate the new screen flow
+2. **Enter Prompt**: A floating form will appear at the click location with a "What you want to create" input field
+3. **Create Screen**: Enter your prompt and click the "Create" button - a new screen will be created at that location and start generating immediately
+4. **Cancel**: Click outside the form to cancel (your input will be preserved for the next attempt)
+5. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
+
 ### Navigating Multiple Screens
 
-1. **Panning**: Click and drag on empty space to pan around the viewport
+1. **Panning**: Press and drag on empty space to pan around the viewport
 2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale)
 3. **Selecting Screens**: Click any screen to select it - it will be centered and zoomed to 100%
 4. **Visual Feedback**: Selected screens display a 2px blue border
@@ -248,17 +262,20 @@ The `/api/create` endpoint:
 
 - **page.tsx**: Main viewport component managing multiple screens, pan/zoom, and selection
   - Manages viewport transform state (pan position and zoom scale)
-  - Handles panning via mouse drag on empty space
+  - Handles panning via mouse press and drag on empty space
   - Handles zooming via mouse wheel (10% to 100%)
-  - Manages multiple screen instances and their data
+  - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
-  - Centers and zooms selected screens to 100%
+  - Centers and zooms selected screens to 100% (works correctly at all zoom levels)
   - Deselects screens when clicking outside
+  - Provides new screen creation flow: clicking empty space shows a form, clicking Create creates a screen at that location
+  - Preserves form input when canceling the new screen flow
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Handles initial prompt input (centered in screen when empty)
   - Manages conversation history state for the screen
   - Tracks selected prompt index for output history viewing
   - Renders generated UI in iframe based on selected prompt
+  - Automatically starts generation when created with initial history (for new screens from form)
   - Automatically selects newly created prompts after generation
   - Shows PromptPanel only when screen is selected
   - Handles screen click events for selection
@@ -317,6 +334,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 - Screen size is fixed at 390px × 844px (mobile only)
 - Zoom is limited to 10% to 100% scale
 - Unselected screens ignore mouse events (except for selection clicks) to allow panning
+- New screen form appears on mouse release (not mouse down) to prevent accidental triggers while dragging
 
 ## Future Improvements
 
@@ -327,6 +345,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 - [x] Multiple conversation branches/screens
 - [x] Pan and zoom viewport
 - [x] Selectable screens with visual feedback
+- [x] New screen creation flow with positioned screens
 - [ ] Custom Tailwind configuration
 - [ ] Better error handling and user feedback
 - [ ] Streaming responses for faster perceived performance
