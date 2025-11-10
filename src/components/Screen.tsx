@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { FaSpinner } from "react-icons/fa";
+import { signIn } from "next-auth/react";
 import PromptPanel from "./PromptPanel";
 import type { ScreenData, ConversationPoint } from "@/lib/types";
+import { storage } from "@/lib/storage";
 
 interface ScreenProps {
   id: string;
@@ -32,6 +34,9 @@ export default function Screen({
     screenData?.selectedPromptIndex ?? null,
   );
   const generationInProgressRef = useRef<string | null>(null);
+  const [iframeHeight, setIframeHeight] = useState<number>(844); // Default height
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeWindowRef = useRef<Window | null>(null);
 
   // Extract title from HTML content
   const extractTitle = (html: string): string | null => {
@@ -56,22 +61,32 @@ export default function Screen({
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
+    html, body { width: 100%; min-height: 844px; }
+    body > * { min-height: 844px; }
   </style>
 </head>
 <body>
   ${html}
   <script>
-    // Ensure Tailwind processes the content
     (function() {
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-          // Tailwind should auto-process, but trigger a reflow to ensure styles apply
-          document.body.offsetHeight;
-        });
-      } else {
-        document.body.offsetHeight;
+      function sendHeight() {
+        const height = Math.max(844, document.documentElement.scrollHeight);
+        window.parent.postMessage({ type: 'iframe-height', height: height }, '*');
       }
+      
+      function init() {
+        sendHeight();
+        if (window.ResizeObserver) {
+          new ResizeObserver(() => requestAnimationFrame(sendHeight)).observe(document.body);
+        }
+      }
+      
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+      window.addEventListener('load', sendHeight);
     })();
   </script>
 </body>
@@ -97,6 +112,30 @@ export default function Screen({
       : conversationPoints.length > 0
         ? conversationPoints[conversationPoints.length - 1].title
         : null;
+
+  // Listen for height messages from iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verify message is from our iframe
+      if (
+        event.data &&
+        event.data.type === "iframe-height" &&
+        typeof event.data.height === "number" &&
+        (iframeRef.current?.contentWindow === event.source ||
+          iframeWindowRef.current === event.source)
+      ) {
+        setIframeHeight(Math.max(844, event.data.height)); // Ensure minimum height
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  // Reset height when content changes
+  useEffect(() => {
+    setIframeHeight(844); // Reset to default when content changes
+  }, [htmlContent]);
 
   // Sync with external screenData when it changes
   useEffect(() => {
@@ -212,6 +251,15 @@ export default function Screen({
       });
 
       if (!response.ok) {
+        // Handle unauthorized error - save prompt and trigger auth
+        if (response.status === 401) {
+          // Save the prompt and screenId for restoration after auth
+          // The screen already exists with the incomplete conversation point
+          await storage.savePendingPrompt(promptToSend, id, null);
+          // Trigger sign in - will redirect back after auth
+          signIn("google", { callbackUrl: window.location.href });
+          return; // Exit early - will retry after auth
+        }
         throw new Error("Failed to generate UI");
       }
 
@@ -359,7 +407,7 @@ export default function Screen({
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center px-6 text-slate-900 dark:text-slate-100">
+    <div className="relative flex flex-col items-stretch justify-center px-6 text-slate-900 dark:text-slate-100">
       {/* Title - displayed above screen for both active and inactive */}
       {screenTitle && (
         <div className="mb-2 text-center">
@@ -368,7 +416,7 @@ export default function Screen({
       )}
 
       {/* Wrapper for Screen and Input - positioned relative to each other */}
-      <div className="relative" style={{ width: "390px", height: "844px" }}>
+      <div className="relative">
         {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
         {isSelected && conversationPoints.length > 0 && (
           <PromptPanel
@@ -383,14 +431,12 @@ export default function Screen({
 
         {/* Screen Container with Iframe */}
         <div
-          className={`relative flex shadow-lg transition-all ${
+          className={`relative inline-block shadow-lg transition-all ${
             isSelected
               ? "border-2 border-blue-500"
               : "border-2 border-transparent hover:border-blue-500"
           }`}
           style={{
-            width: "390px",
-            height: "844px",
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
             cursor: isSelected ? "default" : "pointer",
           }}
@@ -409,14 +455,31 @@ export default function Screen({
           )}
           {htmlContent ? (
             <iframe
+              ref={(el) => {
+                iframeRef.current = el;
+                iframeWindowRef.current = el?.contentWindow || null;
+              }}
               title="Generated UI"
               srcDoc={htmlContent}
-              className="h-full w-full border-0"
+              className="border-0"
               sandbox="allow-same-origin allow-scripts"
-              style={{ pointerEvents: isSelected ? "auto" : "none" }}
+              style={{
+                width: "390px",
+                height: `${iframeHeight}px`,
+                pointerEvents: isSelected ? "auto" : "none",
+              }}
+              onLoad={() => {
+                // Update ref when iframe loads
+                if (iframeRef.current) {
+                  iframeWindowRef.current = iframeRef.current.contentWindow;
+                }
+              }}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-white">
+            <div
+              className="flex h-full w-full items-center justify-center bg-white"
+              style={{ minHeight: "844px" }}
+            >
               <div className="text-sm text-gray-400">No content</div>
             </div>
           )}

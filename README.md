@@ -7,6 +7,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🔐 **OAuth Authentication**: Google OAuth authentication via Auth.js (NextAuth) - sign in with your Google account
 - 👤 **User Profile**: User avatar in top-right corner with profile menu showing name, email, and logout option
 - 🔒 **Protected API**: UI generation endpoint requires authenticated users
+- 🔄 **Auth Flow Preservation**: If you try to create or modify a screen without being authenticated, your prompt is automatically saved and restored after you sign in
 - 🤖 **AI-Powered Generation**: Uses Google Gemini (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
@@ -55,8 +56,11 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 ### Display & Rendering
 
 - **As a** user, **I want to** see generated UIs rendered in an isolated iframe, **so that** the generated content doesn't affect the main application
-- **As a** user, **I want to** view generated UIs in a fixed-size container (390px × 844px), **so that** I can see how they appear on mobile devices
+- **As a** user, **I want to** view generated UIs with a fixed width (390px) and dynamic height (minimum 844px), **so that** I can see the full design without scrolling while maintaining mobile proportions
+- **As a** user, **I want** screens to stretch horizontally to fill available space, **so that** I can see the whole design page without scrolling
+- **As a** user, **I want** the iframe height to adjust automatically based on content, **so that** tall designs are fully visible
 - **As a** user, **I want to** see the generated UI immediately after generation completes, **so that** I can review the result without delay
+- **As a** user, **I want to** see an empty state message when no screens exist, **so that** I know how to get started
 - **As a** user, **I want to** pan the viewport by dragging empty space, **so that** I can navigate around multiple screens
 - **As a** user, **I want to** zoom the viewport using scroll (10% to 100%), **so that** I can see screens at different scales
 - **As a** user, **I want to** click a screen to select it, **so that** I can interact with it and see its prompt panel
@@ -96,6 +100,14 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** receive clear error messages if UI generation fails, **so that** I understand what went wrong
 - **As a** user, **I want to** be prevented from sending empty prompts, **so that** I don't waste API calls
 - **As a** user, **I want to** see disabled states on buttons during loading, **so that** I don't accidentally trigger duplicate requests
+
+### Authentication
+
+- **As a** user, **I want to** sign in with my Google account, **so that** I can access the UI generation features
+- **As a** user, **I want to** see my profile information (name, email) when authenticated, **so that** I know I'm signed in
+- **As a** user, **I want to** be able to sign out, **so that** I can switch accounts or end my session
+- **As a** user, **I want** my prompt to be automatically saved if I try to create/modify a screen without being authenticated, **so that** I don't lose my work
+- **As a** user, **I want** the system to automatically restore my prompt and continue generation after I authenticate, **so that** I don't have to re-enter my request
 
 ### Technical Requirements
 
@@ -230,6 +242,7 @@ Get your API keys from:
    - Copy the **Client ID** and **Client Secret**
 
 4. **Generate AUTH_SECRET**:
+
    ```bash
    openssl rand -base64 32
    ```
@@ -239,7 +252,7 @@ Get your API keys from:
    - Add `AUTH_URL` (`http://localhost:3000` for local, `https://your-domain.com` for production)
    - Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from step 3)
 
-4. Run the development server:
+6. Run the development server:
 
 ```bash
 npm run dev
@@ -259,6 +272,13 @@ yarn dev
 4. **Profile Menu**: After signing in, click the avatar to see your profile menu with name, email, and logout option
 
 **Note**: UI generation requires authentication. You must be signed in to create or modify screens.
+
+**Auth Flow Preservation**: If you try to create or modify a screen without being authenticated, the system will:
+
+1. Save your prompt automatically
+2. Prompt you to sign in with Google
+3. After authentication, automatically restore your prompt and continue the generation process
+4. You won't lose your work - the screen will be created/modified seamlessly after you authenticate
 
 ### Initial Generation
 
@@ -372,7 +392,7 @@ Generated UIs include accessibility best practices:
 
 The `/api/create` endpoint:
 
-- **Requires Authentication**: Returns 401 Unauthorized if user is not authenticated
+- **Requires Authentication**: Returns 401 Unauthorized if user is not authenticated (client automatically handles this by saving prompt and triggering auth flow)
 - Accepts a conversation history array (user prompts and assistant responses)
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats the full conversation history for the LLM, including:
@@ -414,6 +434,8 @@ The `/api/create` endpoint:
   - Handles zooming via mouse wheel (10% to 100%) with non-passive event listener
   - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
+  - **Empty State**: Displays "Click anywhere to create your first screen" message when no screens exist, positioned at 0,0 in viewport coordinates (centered on first load)
+  - Centers viewport on first load when no screens exist and no saved transform
   - Handles screen dragging: unselected screens can be dragged to reposition them
   - Disables panning when dragging a screen to prevent interference
   - Deselects screens when clicking outside or starting to drag another screen
@@ -427,8 +449,12 @@ The `/api/create` endpoint:
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Manages conversation points state (prompt, HTML, title, timestamp for each point)
   - Tracks selected prompt index for output history viewing
+  - **Flexible Layout**: Screen container has flexible width (stretches horizontally) with min-height of 844px
+  - **Dynamic Iframe Height**: Iframe width is fixed at 390px, height adjusts dynamically based on content (minimum 844px)
+  - Uses `postMessage` API to communicate content height from iframe to parent
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
+  - **HTML Wrapper**: Simplified implementation with CSS ensuring html, body, and root content element have min-height: 844px
   - Automatically starts generation when created with initial conversation point (for new screens from form)
   - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts in history)
   - Adds modification prompts to history immediately (before API response) for better UX
@@ -466,16 +492,19 @@ The `/api/create` endpoint:
 ### Deploying to Vercel
 
 1. **Install Vercel CLI**:
+
    ```bash
    npm i -g vercel
    ```
 
 2. **Login to Vercel**:
+
    ```bash
    vercel login
    ```
 
 3. **Deploy**:
+
    ```bash
    vercel --prod
    ```
@@ -530,6 +559,7 @@ The `/api/create` endpoint:
 #### Production (Vercel)
 
 Set these in Vercel project settings:
+
 - All the above variables with `AUTH_URL` set to your production domain (e.g., `https://ui.guskov.dev`)
 
 ### AI Model Configuration
@@ -572,10 +602,3 @@ These can be adjusted in `src/app/api/create/route.ts`
 - [ ] Streaming responses for faster perceived performance
 - [ ] Keyboard shortcuts for navigation
 - [ ] Screen arrangement/organization tools
-
-## Rules
-
-- do not launch dev server yourself, ask user to do that instead
-- run `yarn lint` to check if the project builds
-- write notes to yourself in `docs/MEMORY.md`
-- run `yarn format` after you're done with the code

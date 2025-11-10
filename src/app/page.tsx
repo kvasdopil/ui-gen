@@ -2,12 +2,14 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FaMagic } from "react-icons/fa";
+import { useSession } from "next-auth/react";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import type { ScreenData } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
 export default function Home() {
+  const { data: session, status } = useSession();
   const [screens, setScreens] = useState<ScreenData[]>([]);
   const [isLoadingScreens, setIsLoadingScreens] = useState(true);
   const [isLoadingViewport, setIsLoadingViewport] = useState(true);
@@ -29,6 +31,7 @@ export default function Home() {
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const pendingPromptProcessedRef = useRef(false);
 
   // Handle panning - only when clicking on empty space
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -465,6 +468,19 @@ export default function Home() {
         const loadedTransform = await storage.loadViewportTransform();
         if (loadedTransform) {
           setViewportTransform(loadedTransform);
+        } else if (loadedScreens.length === 0) {
+          // Center viewport when there are no screens and no saved transform (first time)
+          // Center at 0,0 in content coordinates means viewport should be at center of screen
+          requestAnimationFrame(() => {
+            if (viewportRef.current) {
+              const rect = viewportRef.current.getBoundingClientRect();
+              setViewportTransform({
+                x: rect.width / 2,
+                y: rect.height / 2,
+                scale: 1,
+              });
+            }
+          });
         }
       } catch (error) {
         console.error("Error loading data:", error);
@@ -525,6 +541,49 @@ export default function Home() {
     };
   }, [viewportTransform, isLoadingViewport]);
 
+  // Reset pending prompt processed flag when session changes
+  useEffect(() => {
+    pendingPromptProcessedRef.current = false;
+  }, [session?.user?.id]);
+
+  // Check for pending prompts after auth completes
+  useEffect(() => {
+    const restorePendingPrompt = async () => {
+      // Only process once per session change
+      if (pendingPromptProcessedRef.current) return;
+
+      // Wait for auth to complete and screens to load
+      if (status === "loading" || isLoadingScreens) return;
+
+      // Only process if authenticated
+      if (!session) return;
+
+      pendingPromptProcessedRef.current = true;
+
+      try {
+        const pending = await storage.loadPendingPrompt();
+        if (!pending) return;
+
+        // Clear the pending prompt immediately to prevent reprocessing
+        await storage.clearPendingPrompt();
+
+        if (pending.screenId) {
+          // Screen already exists (either new or existing) - find it and select it
+          // The Screen component will auto-retry generation if there's an incomplete point
+          const screen = screens.find((s) => s.id === pending.screenId);
+          if (screen) {
+            setSelectedScreenId(pending.screenId);
+          }
+        }
+      } catch (error) {
+        console.error("Error restoring pending prompt:", error);
+        pendingPromptProcessedRef.current = false; // Allow retry on error
+      }
+    };
+
+    restorePendingPrompt();
+  }, [session, status, isLoadingScreens, screens, viewportTransform]);
+
   return (
     <div
       ref={viewportRef}
@@ -543,6 +602,20 @@ export default function Home() {
           transformOrigin: "0 0",
         }}
       >
+        {!isLoadingScreens && screens.length === 0 && (
+          <div
+            style={{
+              position: "absolute",
+              left: "0px",
+              top: "0px",
+              transform: "translate(-50%, -50%)",
+              pointerEvents: "none",
+            }}
+            className="text-2xl font-light text-gray-300 dark:text-gray-600"
+          >
+            Click anywhere to create your first screen
+          </div>
+        )}
         {screens.map((screen, index) => {
           // Selected screens appear on top, then newer screens
           const zIndex = selectedScreenId === screen.id ? screens.length + 1000 : index + 1;

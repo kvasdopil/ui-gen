@@ -185,6 +185,34 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Preserve original timestamp when completing conversation points
 - **Location**: `src/components/Screen.tsx`
 
+### 18. Auth Flow Preservation
+
+- **Decision**: Preserve prompts and restore create flow after authentication
+- **Reason**: When users try to create/modify screens without being authenticated, they shouldn't lose their work
+- **Implementation**:
+  - When `/api/create` returns 401 Unauthorized, save the prompt and screenId to IndexedDB
+  - Trigger Google OAuth sign-in with callback URL to return to the same page
+  - After authentication completes, check for pending prompts in storage
+  - If pending prompt exists with screenId, select that screen (which already has incomplete conversation point)
+  - Screen component's auto-generation effect detects incomplete point and automatically retries API call
+  - Clear pending prompt from storage after restoration to prevent reprocessing
+  - Use `pendingPromptProcessedRef` to ensure restoration only happens once per session change
+  - Reset processed flag when session user ID changes (e.g., logout/login)
+- **Storage**:
+  - Added `pendingPrompt` object store to IndexedDB schema (database version 3)
+  - Stores: `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
+  - Key: `"current"` (only one pending prompt at a time)
+- **Flow**:
+  1. User creates/modifies screen → API call → 401 Unauthorized
+  2. Save prompt + screenId to `pendingPrompt` storage
+  3. Trigger `signIn("google", { callbackUrl: window.location.href })`
+  4. User authenticates → redirected back to page
+  5. `page.tsx` detects authenticated session → checks for pending prompt
+  6. If found, selects the screen (which has incomplete conversation point)
+  7. `Screen.tsx` auto-generation effect detects incomplete point → retries API call
+  8. Clear pending prompt from storage
+- **Location**: `src/lib/storage.ts`, `src/components/Screen.tsx`, `src/app/page.tsx`
+
 ## Environment Variables
 
 ### Required
@@ -214,7 +242,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **File**: `src/app/api/create/route.ts`
 - **Key Functions**:
   - **Requires Authentication**: Checks for authenticated session using `auth()` from Auth.js
-  - Returns 401 Unauthorized if no session exists
+  - Returns 401 Unauthorized if no session exists (client handles this by saving prompt and triggering auth)
   - Imports `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
   - Uses `gemini-2.5-flash` model with temperature 0.5
   - Cleans markdown code blocks from response
@@ -251,7 +279,11 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Key Features**:
   - Manages `conversationPoints` state (array of ConversationPoint objects)
   - Extracts screen title from HTML metadata (`<!-- Title: ... -->`) and displays it above the screen
-  - Wraps generated HTML with full document structure
+  - **Flexible Layout**: Screen container has flexible width (stretches horizontally) with min-height of 844px
+  - **Dynamic Iframe Height**: Iframe width is fixed at 390px, but height adjusts dynamically based on content (minimum 844px)
+  - **Height Communication**: Uses `postMessage` API to communicate content height from iframe to parent
+  - **Minimum Height Enforcement**: CSS ensures html, body, and root content element have min-height: 844px
+  - Wraps generated HTML with full document structure and simplified CSS/JS for height management
   - Injects Tailwind CDN and helper scripts
   - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
   - Auto-starts generation when screen has conversation point without HTML
@@ -260,9 +292,11 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Replaces incomplete points with completed ones when generation finishes
   - Removes incomplete points if generation fails
   - Uses `generationInProgressRef` with screen ID + timestamp key to prevent duplicate API calls
-- Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
+  - Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
+  - **Auth Flow Preservation**: When API returns 401, saves prompt and screenId to storage, triggers sign-in, and auto-retries after auth
   - Displays "No content" message when screen has no HTML
   - Shows PromptPanel only when screen is selected
+  - **HTML Wrapper**: Simplified implementation with CSS rules for min-height and JavaScript for height calculation
 
 ### Prompt Panel
 
@@ -279,16 +313,18 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/lib/storage.ts`
 - **Key Features**:
-  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform` methods
+  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
   - `IdbStorage` class implementing IndexedDB operations
   - Uses `idb` package for IndexedDB wrapper
-  - Database name: `ui-gen-db`, version: 2 (upgraded from 1 to add viewportTransform store)
+  - Database name: `ui-gen-db`, version: 3 (upgraded from 2 to add pendingPrompt store)
   - Object stores:
     - `screens` with key `"all"` storing array of ScreenData
     - `viewportTransform` with key `"current"` storing ViewportTransform
+    - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
   - Auto-saves screens whenever they change (debounced by 300ms to prevent race conditions)
   - Auto-saves viewport transform with 500ms debounce
   - Auto-loads screens and viewport transform on mount
+  - Pending prompts are saved when auth is required and loaded after authentication
   - Easy to swap for backend persistence (just implement Storage interface)
 
 ### Types
@@ -467,7 +503,10 @@ interface PromptPanelProps {
 - Generated HTML includes title metadata (`<!-- Title: ... -->`) which is extracted and displayed above screens
 - Screen component extracts and displays titles from HTML metadata for both active and inactive screens
 - Iframe sandbox must allow scripts for Tailwind to work
-- Screen component is 390px × 844px - this is fixed and important for mobile mockups
+- Screen component has flexible width (stretches horizontally) with min-height of 844px
+- Iframe width is fixed at 390px, height adjusts dynamically based on content (minimum 844px)
+- Empty state: When no screens exist, displays "Click anywhere to create your first screen" message at 0,0 in viewport coordinates (centered on first load)
+- HTML wrapper uses simplified CSS/JS: CSS sets min-height on html, body, and body > \*; JavaScript calculates and sends height via postMessage
 - PromptPanel is positioned absolutely relative to Screen component wrapper
 - Loading spinner only covers Screen, not the entire page
 - Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
@@ -490,3 +529,4 @@ interface PromptPanelProps {
 - OAuth authentication: UserAvatar component in top-right corner; `/api/create` endpoint requires authenticated session; Auth.js v5 with Google OAuth provider
 - UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference
 - OAuth environment variables: Must not have trailing newlines when setting via Vercel CLI (use `echo -n`); `AUTH_URL` must match production domain exactly
+- Auth flow preservation: When 401 occurs, prompt and screenId are saved to IndexedDB; after auth, screen is selected and generation auto-retries; pending prompts are cleared after restoration

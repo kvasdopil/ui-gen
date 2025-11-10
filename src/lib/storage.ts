@@ -16,6 +16,14 @@ interface UIDatabase extends DBSchema {
     key: string;
     value: ViewportTransform;
   };
+  pendingPrompt: {
+    key: string;
+    value: {
+      prompt: string;
+      screenId: string | null;
+      position: { x: number; y: number } | null;
+    };
+  };
 }
 
 export interface Storage {
@@ -24,11 +32,22 @@ export interface Storage {
   clearScreens(): Promise<void>;
   saveViewportTransform(transform: ViewportTransform): Promise<void>;
   loadViewportTransform(): Promise<ViewportTransform | null>;
+  savePendingPrompt(
+    prompt: string,
+    screenId: string | null,
+    position: { x: number; y: number } | null,
+  ): Promise<void>;
+  loadPendingPrompt(): Promise<{
+    prompt: string;
+    screenId: string | null;
+    position: { x: number; y: number } | null;
+  } | null>;
+  clearPendingPrompt(): Promise<void>;
 }
 
 class IdbStorage implements Storage {
   private dbName = "ui-gen-db";
-  private dbVersion = 2;
+  private dbVersion = 3;
   private db: IDBPDatabase<UIDatabase> | null = null;
 
   private async getDB(): Promise<IDBPDatabase<UIDatabase>> {
@@ -43,6 +62,9 @@ class IdbStorage implements Storage {
         }
         if (!db.objectStoreNames.contains("viewportTransform")) {
           db.createObjectStore("viewportTransform");
+        }
+        if (!db.objectStoreNames.contains("pendingPrompt")) {
+          db.createObjectStore("pendingPrompt");
         }
       },
     });
@@ -99,6 +121,45 @@ class IdbStorage implements Storage {
     } catch (error) {
       console.error("Error loading viewport transform from IndexedDB:", error);
       return null;
+    }
+  }
+
+  async savePendingPrompt(
+    prompt: string,
+    screenId: string | null,
+    position: { x: number; y: number } | null,
+  ): Promise<void> {
+    try {
+      const db = await this.getDB();
+      await db.put("pendingPrompt", { prompt, screenId, position }, "current");
+    } catch (error) {
+      console.error("Error saving pending prompt to IndexedDB:", error);
+      throw error;
+    }
+  }
+
+  async loadPendingPrompt(): Promise<{
+    prompt: string;
+    screenId: string | null;
+    position: { x: number; y: number } | null;
+  } | null> {
+    try {
+      const db = await this.getDB();
+      const pending = await db.get("pendingPrompt", "current");
+      return pending || null;
+    } catch (error) {
+      console.error("Error loading pending prompt from IndexedDB:", error);
+      return null;
+    }
+  }
+
+  async clearPendingPrompt(): Promise<void> {
+    try {
+      const db = await this.getDB();
+      await db.delete("pendingPrompt", "current");
+    } catch (error) {
+      console.error("Error clearing pending prompt from IndexedDB:", error);
+      throw error;
     }
   }
 }
