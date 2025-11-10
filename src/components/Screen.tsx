@@ -16,6 +16,7 @@ interface ScreenProps {
   onCreate: (screenData: Omit<ScreenData, "id">) => void;
   onUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
   onDelete: (screenId: string) => void;
+  onClone: (screenId: string, pointIndex: number) => void;
   screenData: ScreenData | null;
 }
 
@@ -26,6 +27,7 @@ export default function Screen({
   onCreate,
   onUpdate,
   onDelete,
+  onClone,
   screenData,
 }: ScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -573,6 +575,7 @@ export default function Screen({
             selectedPromptIndex={selectedPromptIndex}
             onPromptSelect={handlePromptSelect}
             onDeletePoint={handleDeletePoint}
+            onClone={(pointIndex) => onClone(id, pointIndex)}
           />
         )}
 
@@ -580,8 +583,8 @@ export default function Screen({
         <div
           ref={containerRef}
           className={`relative inline-block shadow-lg transition-all ${isSelected
-              ? "border-2 border-blue-500"
-              : "border-2 border-transparent hover:border-blue-500"
+            ? "border-2 border-blue-500"
+            : "border-2 border-transparent hover:border-blue-500"
             }`}
           style={{
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection

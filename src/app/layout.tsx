@@ -20,8 +20,11 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "UI generator",
-  description: "A minimal Next.js + Tailwind starter powered by TypeScript.",
+  title: "UI Generator",
+  description: "generate application ui with text prompts",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({

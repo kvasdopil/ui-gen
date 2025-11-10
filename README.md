@@ -23,6 +23,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
 - 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
+- 📋 **Clone Screens**: Clone a screen at any point in its conversation history, creating a new screen with full history up to that point, ready to drag and continue from that state
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
 - ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
@@ -88,10 +89,14 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see which prompt is currently selected with visual highlighting, **so that** I know which output I'm viewing
 - **As a** user, **I want to** browse through output history by clicking different prompts, **so that** I can compare different versions of the generated UI
 - **As a** user, **I want to** delete conversation points from history, **so that** I can clean up unwanted entries
-- **As a** user, **I want to** see a delete icon appear when hovering over the last history entry, **so that** I can easily remove it
+- **As a** user, **I want to** see a menu button appear when hovering over history entries, **so that** I can access actions for each entry
+- **As a** user, **I want to** see a delete option in the menu for the last history entry, **so that** I can easily remove it
 - **As a** user, **I want to** confirm before deleting a history entry, **so that** I don't accidentally lose my work
 - **As a** user, **I want** the previous entry to be selected automatically when I delete the currently selected entry, **so that** I can continue viewing history seamlessly
 - **As a** user, **I want** the entire screen to be removed when I delete the last remaining history entry, **so that** empty screens don't clutter my workspace
+- **As a** user, **I want to** clone a screen at any point in its conversation history, **so that** I can branch off and explore different design directions from that state
+- **As a** user, **I want** cloned screens to include the full conversation history up to the cloned point, **so that** I have complete context for further modifications
+- **As a** user, **I want** cloned screens to be immediately ready to drag, **so that** I can quickly position them in my workspace
 - **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
 - **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
 - **As a** user, **I want** my modification prompts to appear in history immediately when I send them, **so that** I can see what I requested while the UI is being generated
@@ -323,16 +328,21 @@ yarn dev
 4. The Screen panel will display the UI that was generated for the selected prompt
 5. You can click different prompts to browse through your output history and compare different versions
 
-### Deleting History Entries
+### Managing History Entries
 
 1. Select a screen to see its prompt history panel
-2. Hover over the last entry in the history to reveal a gray delete icon on the right
-3. Hover over the delete icon to see the entry highlight in red
-4. Click the delete icon to open a confirmation dialog
-5. Confirm deletion to remove the entry from history
-6. If you delete the currently selected entry, the previous entry will be automatically selected
-7. If you delete the last remaining entry, the entire screen will be removed
-8. All changes are saved immediately to persistent storage
+2. Hover over any entry in the history to reveal a menu button (three dots) on the right
+3. Click the menu button to open a dropdown menu with available actions
+4. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
+   - The cloned screen will have a new unique ID
+   - It will be positioned 50px offset from the original screen
+   - The cloned screen will be ready to drag immediately
+   - The cloned point will be selected in the new screen
+5. **Delete**: Click "Delete" on the last entry to remove it from history
+   - A confirmation dialog will appear before deletion
+   - If you delete the currently selected entry, the previous entry will be automatically selected
+   - If you delete the last remaining entry, the entire screen will be removed
+6. All changes are saved immediately to persistent storage
 
 ### Making Modifications
 
@@ -483,15 +493,15 @@ The `/api/create` endpoint:
   - Displays all conversation points (prompts) as clickable cards
   - Highlights the currently selected prompt with blue border and background
   - Allows clicking prompts to view their corresponding HTML outputs
-  - Shows delete icon on hover for the last history entry
-  - Delete icon appears gray by default, turns red on hover
-  - Hovering delete icon highlights the entry with red border and background
+  - Shows menu button (three dots) on hover for each entry
+  - Dropdown menu provides actions: Clone (all entries) and Delete (last entry only)
+  - Delete option uses destructive styling (red) in the menu
   - Provides confirmation dialog before deleting entries
   - Provides "Modify" button to enter modification mode
   - Shows modification input field with "Create" button when in edit mode
   - Handles canceling edit mode when input field loses focus and is empty
   - Only visible when parent screen is selected
-  - All entries maintain consistent width (space reserved for delete icon)
+  - All entries maintain consistent width (space reserved for menu button)
 
 - Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
 

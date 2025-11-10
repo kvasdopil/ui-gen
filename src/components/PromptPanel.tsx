@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FaEdit, FaMagic } from "react-icons/fa";
-import { MdDeleteOutline } from "react-icons/md";
+import { FaCopy, FaEdit, FaMagic } from "react-icons/fa";
+import { MdDeleteOutline, MdMoreVert } from "react-icons/md";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { ConversationPoint } from "@/lib/types";
 
 interface PromptPanelProps {
@@ -24,6 +30,7 @@ interface PromptPanelProps {
   selectedPromptIndex: number | null;
   onPromptSelect: (pointIndex: number) => void;
   onDeletePoint: (pointIndex: number) => void;
+  onClone: (pointIndex: number) => void;
 }
 
 export default function PromptPanel({
@@ -33,6 +40,7 @@ export default function PromptPanel({
   selectedPromptIndex,
   onPromptSelect,
   onDeletePoint,
+  onClone,
 }: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -65,8 +73,7 @@ export default function PromptPanel({
     }
   };
 
-  const handleDeleteClick = (e: React.MouseEvent, index: number) => {
-    e.stopPropagation(); // Prevent triggering the entry click
+  const handleDeleteClick = (index: number) => {
     setConfirmDeleteIndex(index);
   };
 
@@ -81,6 +88,10 @@ export default function PromptPanel({
     setConfirmDeleteIndex(null);
   };
 
+  const handleCloneClick = (index: number) => {
+    onClone(index);
+  };
+
   return (
     <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-x-visible overflow-y-auto">
       <div className="flex flex-col gap-2">
@@ -88,29 +99,45 @@ export default function PromptPanel({
         {conversationPoints.map((point, index) => {
           const isLastEntry = index === conversationPoints.length - 1;
           return (
-            <div key={index} className="group flex items-center gap-2">
+            <div key={index} className="group flex items-center gap-1">
               <Card
                 onClick={() => onPromptSelect(index)}
-                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${
-                  selectedPromptIndex === index
-                    ? "border-primary bg-primary/10 peer-hover:border-destructive peer-hover:bg-destructive/10"
-                    : "hover:border-primary/50 hover:bg-accent/50 peer-hover:border-destructive peer-hover:bg-destructive/10"
-                }`}
+                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${selectedPromptIndex === index
+                  ? "border-primary bg-accent text-primary peer-hover:border-destructive peer-hover:bg-destructive/10"
+                  : "hover:border-primary hover:bg-accent peer-hover:border-destructive peer-hover:bg-destructive/10"
+                  }`}
               >
                 {point.prompt}
               </Card>
-              {/* Delete icon area - always reserve space for consistent width */}
-              <div className="flex w-5 flex-shrink-0 items-center justify-center">
-                {isLastEntry && (
-                  <Button
-                    onClick={(e) => handleDeleteClick(e, index)}
-                    variant="ghost"
-                    size="icon-sm"
-                    className="peer relative opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                  >
-                    <MdDeleteOutline className="text-base" />
-                  </Button>
-                )}
+              {/* Dropdown menu */}
+              <div className="flex w-6 flex-shrink-0 items-center justify-center">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="relative h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 p-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MdMoreVert className="text-sm" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuItem onClick={() => handleCloneClick(index)}>
+                      <FaCopy className="mr-2 h-4 w-4" />
+                      <span>Clone</span>
+                    </DropdownMenuItem>
+                    {isLastEntry && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => handleDeleteClick(index)}
+                      >
+                        <MdDeleteOutline className="mr-2 h-4 w-4" />
+                        <span>Delete</span>
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           );
