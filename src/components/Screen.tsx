@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { FaSpinner } from "react-icons/fa";
+import { TbHandClick } from "react-icons/tb";
 import { signIn } from "next-auth/react";
+import { Button } from "@/components/ui/button";
 import PromptPanel from "./PromptPanel";
 import type { ScreenData, ConversationPoint } from "@/lib/types";
 import { storage } from "@/lib/storage";
@@ -37,6 +39,11 @@ export default function Screen({
   const [iframeHeight, setIframeHeight] = useState<number>(844); // Default height
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iframeWindowRef = useRef<Window | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [highlights, setHighlights] = useState<
+    Array<{ type: "a" | "button"; x: number; y: number; width: number; height: number }>
+  >([]);
+  const [showClickables, setShowClickables] = useState(false);
 
   // Extract title from HTML content
   const extractTitle = (html: string): string | null => {
@@ -136,6 +143,133 @@ export default function Screen({
   useEffect(() => {
     setIframeHeight(844); // Reset to default when content changes
   }, [htmlContent]);
+
+  // Function to update highlights from iframe content
+  const updateHighlights = useCallback(() => {
+    if (!iframeRef.current || !containerRef.current || !htmlContent) {
+      setHighlights([]);
+      return;
+    }
+
+    try {
+      const iframeDoc = iframeRef.current.contentDocument;
+      const iframeWindow = iframeRef.current.contentWindow;
+      if (!iframeDoc || !iframeDoc.documentElement || !iframeWindow) {
+        setHighlights([]);
+        return;
+      }
+
+      const newHighlights: Array<{
+        type: "a" | "button";
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }> = [];
+
+      // Get iframe's position within container (accounts for border)
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const iframeRect = iframeRef.current.getBoundingClientRect();
+      const iframeOffsetX = iframeRect.left - containerRect.left;
+      const iframeOffsetY = iframeRect.top - containerRect.top;
+
+      // Helper to get element position relative to iframe document (not affected by parent transforms)
+      const getElementPositionInIframe = (element: Element) => {
+        let x = 0;
+        let y = 0;
+        let current: Element | null = element;
+
+        // Walk up the DOM tree accumulating offsets
+        while (current && current !== iframeDoc.documentElement) {
+          const htmlElement = current as HTMLElement;
+          x += htmlElement.offsetLeft || 0;
+          y += htmlElement.offsetTop || 0;
+          current = htmlElement.offsetParent as Element | null;
+        }
+
+        return { x, y };
+      };
+
+      // Find all <a> elements with href attribute
+      const links = iframeDoc.querySelectorAll("a[href]");
+      links.forEach((link) => {
+        const pos = getElementPositionInIframe(link);
+        const rect = link.getBoundingClientRect();
+        // Position relative to container = position in iframe + iframe offset in container
+        newHighlights.push({
+          type: "a",
+          x: pos.x + iframeOffsetX,
+          y: pos.y + iframeOffsetY,
+          width: rect.width,
+          height: rect.height,
+        });
+      });
+
+      // Find all <button> elements
+      const buttons = iframeDoc.querySelectorAll("button");
+      buttons.forEach((button) => {
+        const pos = getElementPositionInIframe(button);
+        const rect = button.getBoundingClientRect();
+        // Position relative to container = position in iframe + iframe offset in container
+        newHighlights.push({
+          type: "button",
+          x: pos.x + iframeOffsetX,
+          y: pos.y + iframeOffsetY,
+          width: rect.width,
+          height: rect.height,
+        });
+      });
+
+      setHighlights(newHighlights);
+    } catch (error) {
+      // Cross-origin or other error - silently fail
+      console.debug("Could not access iframe content for highlights:", error);
+      setHighlights([]);
+    }
+  }, [htmlContent]);
+
+  // Update highlights when iframe content loads or changes
+  useEffect(() => {
+    if (!htmlContent) {
+      setHighlights([]);
+      return;
+    }
+
+    // Wait for iframe to load
+    if (iframeRef.current) {
+      const iframe = iframeRef.current;
+
+      // Try immediately if already loaded
+      if (iframe.contentDocument?.readyState === "complete") {
+        // Small delay to ensure rendering is complete
+        setTimeout(updateHighlights, 100);
+      } else {
+        // Wait for load event
+        iframe.addEventListener(
+          "load",
+          () => {
+            setTimeout(updateHighlights, 100);
+          },
+          { once: true },
+        );
+      }
+    }
+
+    // Also update on window resize or scroll
+    const handleUpdate = () => {
+      if (iframeRef.current && htmlContent) {
+        updateHighlights();
+      }
+    };
+
+    window.addEventListener("resize", handleUpdate);
+    window.addEventListener("scroll", handleUpdate, true);
+
+    return () => {
+      window.removeEventListener("resize", handleUpdate);
+      window.removeEventListener("scroll", handleUpdate, true);
+    };
+  }, [htmlContent, iframeHeight, updateHighlights]);
 
   // Sync with external screenData when it changes
   useEffect(() => {
@@ -410,8 +544,21 @@ export default function Screen({
     <div className="relative flex flex-col items-stretch justify-center px-6 text-slate-900 dark:text-slate-100">
       {/* Title - displayed above screen for both active and inactive */}
       {screenTitle && (
-        <div className="mb-2 text-center">
+        <div className="mb-2 flex items-center justify-center gap-2">
           <span className="font-bold text-black dark:text-black">{screenTitle}</span>
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowClickables(!showClickables);
+            }}
+            variant="ghost"
+            size="icon-sm"
+            title={showClickables ? "Hide clickables" : "Show clickables"}
+          >
+            <TbHandClick
+              className={`h-5 w-5 ${showClickables ? "text-blue-500" : "text-gray-400"}`}
+            />
+          </Button>
         </div>
       )}
 
@@ -431,11 +578,11 @@ export default function Screen({
 
         {/* Screen Container with Iframe */}
         <div
-          className={`relative inline-block shadow-lg transition-all ${
-            isSelected
+          ref={containerRef}
+          className={`relative inline-block shadow-lg transition-all ${isSelected
               ? "border-2 border-blue-500"
               : "border-2 border-transparent hover:border-blue-500"
-          }`}
+            }`}
           style={{
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
             cursor: isSelected ? "default" : "pointer",
@@ -454,27 +601,60 @@ export default function Screen({
             </div>
           )}
           {htmlContent ? (
-            <iframe
-              ref={(el) => {
-                iframeRef.current = el;
-                iframeWindowRef.current = el?.contentWindow || null;
-              }}
-              title="Generated UI"
-              srcDoc={htmlContent}
-              className="border-0"
-              sandbox="allow-same-origin allow-scripts"
-              style={{
-                width: "390px",
-                height: `${iframeHeight}px`,
-                pointerEvents: isSelected ? "auto" : "none",
-              }}
-              onLoad={() => {
-                // Update ref when iframe loads
-                if (iframeRef.current) {
-                  iframeWindowRef.current = iframeRef.current.contentWindow;
-                }
-              }}
-            />
+            <>
+              <iframe
+                ref={(el) => {
+                  iframeRef.current = el;
+                  iframeWindowRef.current = el?.contentWindow || null;
+                }}
+                title="Generated UI"
+                srcDoc={htmlContent}
+                className="border-0"
+                sandbox="allow-same-origin allow-scripts"
+                style={{
+                  width: "390px",
+                  height: `${iframeHeight}px`,
+                  pointerEvents: isSelected ? "auto" : "none",
+                }}
+                onLoad={() => {
+                  // Update ref when iframe loads
+                  if (iframeRef.current) {
+                    iframeWindowRef.current = iframeRef.current.contentWindow;
+                    // Trigger highlight update after iframe loads
+                    setTimeout(updateHighlights, 100);
+                  }
+                }}
+              />
+              {/* Highlight Overlay */}
+              {showClickables && (
+                <div
+                  className="pointer-events-none absolute inset-0 z-10"
+                  style={{
+                    width: "390px",
+                    height: `${iframeHeight}px`,
+                  }}
+                >
+                  {highlights.map((highlight, index) => (
+                    <div
+                      key={index}
+                      className="absolute border-2"
+                      style={{
+                        left: `${highlight.x}px`,
+                        top: `${highlight.y}px`,
+                        width: `${highlight.width}px`,
+                        height: `${highlight.height}px`,
+                        borderColor: highlight.type === "a" ? "#ff00ff" : "#00ffff", // magenta for links, cyan for buttons
+                        backgroundColor:
+                          highlight.type === "a"
+                            ? "rgba(255, 0, 255, 0.1)"
+                            : "rgba(0, 255, 255, 0.1)", // semi-transparent fill
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
             <div
               className="flex h-full w-full items-center justify-center bg-white"

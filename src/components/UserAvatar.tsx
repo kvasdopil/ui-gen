@@ -1,36 +1,20 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import Image from "next/image";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { FaUserCircle } from "react-icons/fa";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function UserAvatar() {
   const { data: session, status } = useSession();
-  const [showPopup, setShowPopup] = useState(false);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-
-  // Close popup when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        popupRef.current &&
-        buttonRef.current &&
-        !popupRef.current.contains(event.target as Node) &&
-        !buttonRef.current.contains(event.target as Node)
-      ) {
-        setShowPopup(false);
-      }
-    };
-
-    if (showPopup) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }
-  }, [showPopup]);
 
   const handleAvatarClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent event propagation to parent
@@ -39,16 +23,12 @@ export default function UserAvatar() {
     if (!session) {
       // Not authenticated - initiate sign in
       signIn("google");
-    } else {
-      // Authenticated - toggle popup
-      setShowPopup(!showPopup);
     }
   };
 
   const handleLogout = (e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent event propagation to parent
     signOut();
-    setShowPopup(false);
   };
 
   const isLoading = status === "loading";
@@ -61,61 +41,68 @@ export default function UserAvatar() {
       onMouseUp={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <button
-        ref={buttonRef}
-        onClick={handleAvatarClick}
-        onMouseDown={(e) => e.stopPropagation()}
-        onMouseMove={(e) => e.stopPropagation()}
-        onMouseUp={(e) => e.stopPropagation()}
-        disabled={isLoading}
-        className="flex items-center justify-center rounded-full transition-all hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-        aria-label={session ? "User menu" : "Sign in"}
-      >
-        {session?.user?.image ? (
-          <Image
-            src={session.user.image}
-            alt={session.user.name || "User avatar"}
-            width={40}
-            height={40}
-            className="h-10 w-10 rounded-full border-2 border-white shadow-lg"
-            unoptimized
-          />
-        ) : (
-          <FaUserCircle className="h-10 w-10 text-gray-600 dark:text-gray-400" />
-        )}
-      </button>
-
-      {/* Popup menu */}
-      {showPopup && session && (
-        <div
-          ref={popupRef}
+      {!session ? (
+        <Button
+          onClick={handleAvatarClick}
           onMouseDown={(e) => e.stopPropagation()}
           onMouseMove={(e) => e.stopPropagation()}
           onMouseUp={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className="absolute top-14 right-0 mt-2 w-64 cursor-default rounded-lg border border-gray-300 bg-white shadow-xl dark:border-gray-600 dark:bg-gray-800"
+          disabled={isLoading}
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 rounded-full"
+          aria-label="Sign in"
         >
-          <div className="p-4">
-            <div className="mb-3 border-b border-gray-200 pb-3 dark:border-gray-700">
-              {session.user.name && (
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {session.user.name}
-                </p>
-              )}
-              {session.user.email && (
-                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                  {session.user.email}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={handleLogout}
-              className="w-full rounded-lg bg-red-500 px-4 py-2 text-sm text-white transition-colors hover:bg-red-600"
+          <FaUserCircle className="h-10 w-10 text-muted-foreground" />
+        </Button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 rounded-full"
+              aria-label="User menu"
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseMove={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
+              <Avatar className="h-10 w-10 border-2 border-background shadow-lg">
+                {session.user?.image ? (
+                  <AvatarImage src={session.user.image} alt={session.user.name || "User avatar"} />
+                ) : (
+                  <AvatarFallback>
+                    <FaUserCircle className="h-6 w-6" />
+                  </AvatarFallback>
+                )}
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-64"
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseMove={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DropdownMenuLabel>
+              <div className="flex flex-col gap-1">
+                {session.user?.name && (
+                  <p className="text-sm font-semibold">{session.user.name}</p>
+                )}
+                {session.user?.email && (
+                  <p className="text-xs text-muted-foreground">{session.user.email}</p>
+                )}
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
               Log out
-            </button>
-          </div>
-        </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
     </div>
   );

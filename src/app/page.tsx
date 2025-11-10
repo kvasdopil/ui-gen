@@ -3,8 +3,13 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FaMagic } from "react-icons/fa";
 import { useSession } from "next-auth/react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
+import CreateScreenPopup from "@/components/CreateScreenPopup";
 import type { ScreenData } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
@@ -26,10 +31,12 @@ export default function Home() {
   const [screenDragStart, setScreenDragStart] = useState({ x: 0, y: 0, screenX: 0, screenY: 0 });
   const [isDraggingScreen, setIsDraggingScreen] = useState(false);
   const justFinishedDraggingRef = useRef<string | null>(null);
+  const [isCreateScreenPopupMode, setIsCreateScreenPopupMode] = useState(false);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
   const [newScreenInput, setNewScreenInput] = useState("");
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
+  const createScreenPopupRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pendingPromptProcessedRef = useRef(false);
 
@@ -39,6 +46,11 @@ export default function Home() {
 
     // Don't initiate new screen flow if clicking on the new screen form itself
     if (newScreenFormRef.current?.contains(target)) {
+      return;
+    }
+
+    // Don't initiate new screen flow if clicking on the create screen popup itself
+    if (createScreenPopupRef.current?.contains(target)) {
       return;
     }
 
@@ -162,6 +174,10 @@ export default function Home() {
       if (isNewScreenMode) {
         setIsNewScreenMode(false);
       }
+      // Cancel create screen popup if active
+      if (isCreateScreenPopupMode) {
+        setIsCreateScreenPopupMode(false);
+      }
       setIsDragging(true);
     }
 
@@ -188,11 +204,14 @@ export default function Home() {
 
     // If user didn't drag and clicked on empty space, initiate new screen flow
     if (!isDragging && !draggedScreenId && wasEmptySpaceClick && clickPosition) {
-      // If not already in new screen mode, initiate it
-      if (!isNewScreenMode) {
+      // If not already in create screen popup mode, initiate it
+      if (!isCreateScreenPopupMode && !isNewScreenMode) {
         setNewScreenPosition(clickPosition);
-        setIsNewScreenMode(true);
-      } else {
+        setIsCreateScreenPopupMode(true);
+      } else if (isCreateScreenPopupMode) {
+        // If already in popup mode and clicking outside, dismiss it
+        setIsCreateScreenPopupMode(false);
+      } else if (isNewScreenMode) {
         // If already in new screen mode and clicking outside, cancel it (input is preserved)
         setIsNewScreenMode(false);
       }
@@ -432,6 +451,8 @@ export default function Home() {
     setSelectedScreenId(screenId);
     // Close new screen form if it's open
     setIsNewScreenMode(false);
+    // Close create screen popup if it's open
+    setIsCreateScreenPopupMode(false);
     // Disabled: centerAndZoomScreen(screenId);
   };
 
@@ -653,6 +674,19 @@ export default function Home() {
         })}
       </div>
 
+      {/* Create Screen Popup - initial popup with Mobile app button */}
+      {isCreateScreenPopupMode && (
+        <CreateScreenPopup
+          ref={createScreenPopupRef}
+          position={newScreenPosition}
+          onSelect={() => {
+            setIsCreateScreenPopupMode(false);
+            setIsNewScreenMode(true);
+          }}
+          onDismiss={() => setIsCreateScreenPopupMode(false)}
+        />
+      )}
+
       {/* New Screen Form - positioned absolutely in viewport coordinates */}
       {isNewScreenMode && (
         <div
@@ -665,27 +699,28 @@ export default function Home() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex flex-col gap-3 rounded-lg border border-gray-300 bg-white p-4 shadow-xl dark:border-gray-600 dark:bg-gray-800">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          <Card className="flex w-80 flex-col gap-3 p-4">
+            <Label htmlFor="new-screen-textarea" className="text-sm">
               What you want to create
-            </label>
-            <textarea
+            </Label>
+            <Textarea
+              id="new-screen-textarea"
               value={newScreenInput}
               onChange={(e) => setNewScreenInput(e.target.value)}
               placeholder="Describe the UI you want..."
               rows={6}
-              className="w-80 resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              className="text-sm"
               autoFocus
             />
-            <button
+            <Button
               onClick={handleCreateNewScreen}
               disabled={!newScreenInput.trim()}
-              className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm text-white shadow-lg transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center justify-center gap-2 text-sm"
             >
               <FaMagic />
               <span>Create</span>
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       )}
     </div>

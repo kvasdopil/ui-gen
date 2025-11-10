@@ -75,9 +75,15 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Decision**: No auto-selection or auto-centering when creating screens
 - **Reason**: Prevents viewport disruption when creating multiple screens quickly
 - **Z-Index**: Newer screens appear above older ones; selected screens always on top
-- **Two-Click Behavior**: First click on empty space deselects current screen, second click (when no screen selected) shows new screen form
-- **Implementation**: Track `hadSelectedScreen` in `handleMouseDown` to determine if popup should appear
-- **Location**: `src/app/page.tsx`
+- **Two-Click Behavior**: First click on empty space deselects current screen, second click (when no screen selected) shows initial popup
+- **Two-Step Flow**: 
+  1. First shows `CreateScreenPopup` component with "Create screen" title and "Mobile app" button
+  2. Clicking "Mobile app" button shows the "What you want to create" dialog form
+- **Implementation**: 
+  - Track `hadSelectedScreen` in `handleMouseDown` to determine if popup should appear
+  - Use `isCreateScreenPopupMode` state for initial popup, `isNewScreenMode` for prompt form
+  - Both popups can be dismissed by clicking outside
+- **Location**: `src/app/page.tsx`, `src/components/CreateScreenPopup.tsx`
 
 ### 10. Draggable Screens
 
@@ -185,7 +191,24 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Preserve original timestamp when completing conversation points
 - **Location**: `src/components/Screen.tsx`
 
-### 18. Auth Flow Preservation
+### 19. Clickable Highlights Overlay
+
+- **Decision**: Add overlay layer to highlight interactive elements (`<a>` and `<button>`) without modifying generated content
+- **Reason**: Helps users identify clickable elements in generated designs for accessibility and design review
+- **Implementation**:
+  - Toggle button (TbHandClick icon) next to screen title to show/hide highlights
+  - Icon is gray (`text-gray-400`) by default, blue (`text-blue-500`) when active
+  - Overlay layer positioned absolutely over iframe with `pointer-events: none` to avoid interference
+  - Highlights `<a>` elements with `href` attribute in magenta (`#ff00ff` with 10% opacity fill)
+  - Highlights `<button>` elements in cyan (`#00ffff` with 10% opacity fill)
+  - Uses `offsetLeft`/`offsetTop` to calculate element positions relative to iframe document (not affected by CSS transforms)
+  - Adds iframe offset within container to get final position relative to container (where overlay is positioned)
+  - Updates highlights when iframe content loads, changes, or window resizes
+  - State (`showClickables`) is not persisted - resets to `false` on page reload
+- **Gotcha**: `getBoundingClientRect()` returns viewport coordinates affected by CSS transforms, so we use `offsetLeft`/`offsetTop` instead to get positions relative to iframe document
+- **Location**: `src/components/Screen.tsx`
+
+### 20. Auth Flow Preservation
 
 - **Decision**: Preserve prompts and restore create flow after authentication
 - **Reason**: When users try to create/modify screens without being authenticated, they shouldn't lose their work
@@ -296,6 +319,12 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - **Auth Flow Preservation**: When API returns 401, saves prompt and screenId to storage, triggers sign-in, and auto-retries after auth
   - Displays "No content" message when screen has no HTML
   - Shows PromptPanel only when screen is selected
+  - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
+    - Highlights `<a>` elements with `href` attribute in magenta
+    - Highlights `<button>` elements in cyan
+    - Overlay layer positioned absolutely over iframe without modifying generated content
+    - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
+    - State is not persisted (resets on page reload)
   - **HTML Wrapper**: Simplified implementation with CSS rules for min-height and JavaScript for height calculation
 
 ### Prompt Panel
@@ -441,18 +470,19 @@ interface PromptPanelProps {
 
 ### Creating New Screen
 
-1. User clicks empty space (first click deselects if screen selected, second click shows form)
-2. Floating form appears at click location
-3. User enters prompt and clicks "Create"
-4. Screen is created with initial conversation point (prompt, no HTML yet)
-5. `Screen` component auto-detects incomplete conversation point and calls `/api/create`
-6. API endpoint:
+1. User clicks empty space (first click deselects if screen selected, second click shows initial popup)
+2. `CreateScreenPopup` component appears at click location with "Create screen" title and "Mobile app" button
+3. User clicks "Mobile app" button to open the prompt dialog form
+4. User enters prompt and clicks "Create"
+5. Screen is created with initial conversation point (prompt, no HTML yet)
+6. `Screen` component auto-detects incomplete conversation point and calls `/api/create`
+7. API endpoint:
    - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
    - Converts conversation points to history format (only completed points with HTML)
    - Calls Gemini API via Vercel AI SDK
    - Cleans markdown code blocks
    - Returns HTML with title metadata comment
-7. `Screen` component:
+8. `Screen` component:
    - Extracts title from HTML metadata (`<!-- Title: ... -->`)
    - Replaces the incomplete conversation point with completed one (prevents duplicate)
    - Updates conversation point with HTML and title
@@ -460,8 +490,8 @@ interface PromptPanelProps {
    - Wraps HTML with document structure
    - Injects Tailwind CDN
    - Sets `srcDoc` on iframe
-8. Screen data is automatically saved to IndexedDB
-9. Iframe renders the generated UI
+9. Screen data is automatically saved to IndexedDB
+10. Iframe renders the generated UI
 
 ### Making Modifications
 
@@ -524,7 +554,8 @@ interface PromptPanelProps {
 - Screen dragging: Unselected screens can be dragged; panning is disabled during drag; selected screens are non-draggable
 - Drag detection: Only mark as dragging after >5px movement to allow clicks to select; prevent panning as soon as `draggedScreenId` is set
 - Camera persistence: Viewport transform is persisted to IndexedDB in `viewportTransform` object store with key `"current"`
-- New screen creation: Two-click behavior - first click deselects, second click shows form (prevents accidental form triggers)
+- New screen creation: Two-click behavior - first click deselects, second click shows initial popup; two-step flow: CreateScreenPopup with "Mobile app" button → prompt dialog form
+- CreateScreenPopup component: Separate component for initial screen type selection; uses forwardRef for click-outside detection; ghost button style with icon and label
 - Conversation points: Incomplete points are replaced (not duplicated) when generation completes; modification prompts appear immediately in history
 - OAuth authentication: UserAvatar component in top-right corner; `/api/create` endpoint requires authenticated session; Auth.js v5 with Google OAuth provider
 - UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference

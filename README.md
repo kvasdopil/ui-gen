@@ -34,6 +34,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Draggable Screens**: Drag unselected screens to reposition them; panning is disabled during screen drag
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
+- 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
 
 ## User Stories
 
@@ -72,6 +73,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see the prompt panel only when a screen is selected, **so that** the interface stays clean when no screen is active
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
 - **As a** user, **I want** my camera position and zoom level to be saved, **so that** I can continue from where I left off when I reload the page
+- **As a** user, **I want to** toggle visibility of clickable elements (links and buttons) in generated designs, **so that** I can easily identify interactive elements
 
 ### User Interface
 
@@ -283,21 +285,23 @@ yarn dev
 ### Initial Generation
 
 1. When the viewport is empty, click anywhere on the empty space
-2. A floating form will appear at the click location
-3. Enter a description of the UI you want to generate
-4. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
-5. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
-6. The generated UI will be displayed in a 390px × 844px screen container
-7. The screen will be created at the location where you clicked
+2. A small popup will appear with "Create screen" title and a "Mobile app" button
+3. Click the "Mobile app" button to open the prompt dialog
+4. Enter a description of the UI you want to generate
+5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
+6. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
+7. The generated UI will be displayed in a 390px × 844px screen container
+8. The screen will be created at the location where you clicked
 
 ### Creating New Screens
 
 1. **Deselect First**: If a screen is selected, click on empty space once to deselect it
-2. **Click Again to Create**: Click on empty space again (when no screen is selected) to show the new screen form
-3. **Enter Prompt**: A floating form will appear at the click location with a "What you want to create" input field
-4. **Create Screen**: Enter your prompt and click the "Create" button - a new screen will be created at that location and start generating immediately
-5. **Cancel**: Click outside the form or select any screen to cancel (your input will be preserved for the next attempt)
-6. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
+2. **Click Again to Create**: Click on empty space again (when no screen is selected) to show the initial popup
+3. **Select Type**: A small popup will appear at the click location with "Create screen" title and a "Mobile app" button
+4. **Enter Prompt**: Click the "Mobile app" button to open the "What you want to create" dialog, then enter your prompt
+5. **Create Screen**: Click the "Create" button - a new screen will be created at that location and start generating immediately
+6. **Cancel**: Click outside any popup/form or select any screen to cancel (your input will be preserved for the next attempt)
+7. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
 
 ### Navigating Multiple Screens
 
@@ -454,6 +458,12 @@ The `/api/create` endpoint:
   - Uses `postMessage` API to communicate content height from iframe to parent
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
+  - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
+    - Highlights `<a>` elements with `href` attribute in magenta
+    - Highlights `<button>` elements in cyan
+    - Overlay layer positioned absolutely over iframe without modifying generated content
+    - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
+    - State is not persisted (resets on page reload)
   - **HTML Wrapper**: Simplified implementation with CSS ensuring html, body, and root content element have min-height: 844px
   - Automatically starts generation when created with initial conversation point (for new screens from form)
   - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts in history)
