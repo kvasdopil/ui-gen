@@ -507,6 +507,42 @@ The `/api/create` endpoint:
 
 ## Development
 
+### Development Workflow
+
+1. **Start Development Server**:
+   ```bash
+   yarn dev
+   ```
+
+2. **Run Linting**:
+   ```bash
+   yarn lint
+   ```
+
+3. **Format Code**:
+   ```bash
+   yarn format
+   ```
+
+4. **Run All Linting Checks**:
+   ```bash
+   yarn lint:full
+   ```
+
+### Code Style Guidelines
+
+- TypeScript strict mode enabled
+- ESLint with Next.js config
+- Prettier for code formatting
+- Tailwind CSS for styling
+
+### Important Notes
+
+- Always run `yarn format` after making code changes
+- Run `yarn lint` to check if the project builds
+- Never commit to git unless explicitly asked by the user
+- Do not launch dev server yourself - ask user to do that instead
+
 ## Deployment
 
 ### Deploying to Vercel
@@ -551,17 +587,11 @@ The `/api/create` endpoint:
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run TypeScript and ESLint checks
+- `npm run format` - Format code with Prettier
 - `npm run lint:prettier` - Check code formatting
 - `npm run lint:knip` - Check for unused code
 - `npm run lint:jscpd` - Check for code duplication
 - `npm run lint:full` - Run all linting checks
-
-### Code Style
-
-- TypeScript strict mode enabled
-- ESLint with Next.js config
-- Prettier for code formatting
-- Tailwind CSS for styling
 
 ## Configuration
 

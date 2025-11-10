@@ -13,6 +13,14 @@ import CreateScreenPopup from "@/components/CreateScreenPopup";
 import type { ScreenData } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
+// Grid size for snapping
+const GRID_SIZE = 16;
+
+// Helper function to snap a value to the grid
+const snapToGrid = (value: number): number => {
+  return Math.round(value / GRID_SIZE) * GRID_SIZE;
+};
+
 export default function Home() {
   const { data: session, status } = useSession();
   const [screens, setScreens] = useState<ScreenData[]>([]);
@@ -149,9 +157,9 @@ export default function Home() {
           const contentDeltaX = deltaX / viewportTransform.scale;
           const contentDeltaY = deltaY / viewportTransform.scale;
 
-          // Calculate new screen position
-          const newX = screenDragStart.screenX + contentDeltaX;
-          const newY = screenDragStart.screenY + contentDeltaY;
+          // Calculate new screen position and snap to grid
+          const newX = snapToGrid(screenDragStart.screenX + contentDeltaX);
+          const newY = snapToGrid(screenDragStart.screenY + contentDeltaY);
 
           // Update screen position
           handleScreenUpdate(draggedScreenId, {
@@ -391,12 +399,13 @@ export default function Home() {
     };
 
     // Create the screen with initial conversation point (will trigger generation)
+    // Snap position to grid
     const timestamp = Date.now();
     const newScreen: ScreenData = {
       id: `screen-${timestamp}`,
       conversationPoints: [initialConversationPoint],
       selectedPromptIndex: 0,
-      position: { x: contentX, y: contentY },
+      position: { x: snapToGrid(contentX), y: snapToGrid(contentY) },
     };
 
     setScreens((prevScreens) => [...prevScreens, newScreen]);
@@ -466,6 +475,34 @@ export default function Home() {
       }
     },
     [selectedScreenId],
+  );
+
+  // Handle screen cloning
+  const handleScreenClone = useCallback(
+    (screenId: string, pointIndex: number) => {
+      const originalScreen = screens.find((s) => s.id === screenId);
+      if (!originalScreen) {
+        console.warn(`Screen ${screenId} not found for cloning`);
+        return;
+      }
+
+      // Create new screen with conversation history up to and including pointIndex
+      // Snap position to grid
+      const timestamp = Date.now();
+      const clonedScreen: ScreenData = {
+        id: `screen-${timestamp}`,
+        conversationPoints: originalScreen.conversationPoints.slice(0, pointIndex + 1),
+        selectedPromptIndex: pointIndex,
+        position: originalScreen.position
+          ? { x: snapToGrid(originalScreen.position.x + 50), y: snapToGrid(originalScreen.position.y + 50) }
+          : { x: snapToGrid(50), y: snapToGrid(50) },
+      };
+
+      setScreens((prevScreens) => [...prevScreens, clonedScreen]);
+      // Select the cloned screen
+      setSelectedScreenId(clonedScreen.id);
+    },
+    [screens],
   );
 
   // Effect to center screen after selection - DISABLED
@@ -667,6 +704,7 @@ export default function Home() {
                 onCreate={handleScreenCreate}
                 onUpdate={handleScreenUpdate}
                 onDelete={handleScreenDelete}
+                onClone={handleScreenClone}
                 screenData={screen}
               />
             </div>
