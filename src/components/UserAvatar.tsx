@@ -53,7 +53,7 @@ export default function UserAvatar() {
           className="h-10 w-10 rounded-full"
           aria-label="Sign in"
         >
-          <FaUserCircle className="h-10 w-10 text-muted-foreground" />
+          <FaUserCircle className="text-muted-foreground h-10 w-10" />
         </Button>
       ) : (
         <DropdownMenu>
@@ -68,7 +68,7 @@ export default function UserAvatar() {
               onMouseUp={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
-              <Avatar className="h-10 w-10 border-2 border-background shadow-lg">
+              <Avatar className="border-background h-10 w-10 border-2 shadow-lg">
                 {session.user?.image ? (
                   <AvatarImage src={session.user.image} alt={session.user.name || "User avatar"} />
                 ) : (
@@ -89,11 +89,9 @@ export default function UserAvatar() {
           >
             <DropdownMenuLabel>
               <div className="flex flex-col gap-1">
-                {session.user?.name && (
-                  <p className="text-sm font-semibold">{session.user.name}</p>
-                )}
+                {session.user?.name && <p className="text-sm font-semibold">{session.user.name}</p>}
                 {session.user?.email && (
-                  <p className="text-xs text-muted-foreground">{session.user.email}</p>
+                  <p className="text-muted-foreground text-xs">{session.user.email}</p>
                 )}
               </div>
             </DropdownMenuLabel>

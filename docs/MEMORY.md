@@ -76,10 +76,10 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Reason**: Prevents viewport disruption when creating multiple screens quickly
 - **Z-Index**: Newer screens appear above older ones; selected screens always on top
 - **Two-Click Behavior**: First click on empty space deselects current screen, second click (when no screen selected) shows initial popup
-- **Two-Step Flow**: 
+- **Two-Step Flow**:
   1. First shows `CreateScreenPopup` component with "Create screen" title and "Mobile app" button
   2. Clicking "Mobile app" button shows the "What you want to create" dialog form
-- **Implementation**: 
+- **Implementation**:
   - Track `hadSelectedScreen` in `handleMouseDown` to determine if popup should appear
   - Use `isCreateScreenPopupMode` state for initial popup, `isNewScreenMode` for prompt form
   - Both popups can be dismissed by clicking outside

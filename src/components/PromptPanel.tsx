@@ -102,10 +102,11 @@ export default function PromptPanel({
             <div key={index} className="group flex items-center gap-1">
               <Card
                 onClick={() => onPromptSelect(index)}
-                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${selectedPromptIndex === index
-                  ? "border-primary bg-accent text-primary peer-hover:border-destructive peer-hover:bg-destructive/10"
-                  : "hover:border-primary hover:bg-accent peer-hover:border-destructive peer-hover:bg-destructive/10"
-                  }`}
+                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${
+                  selectedPromptIndex === index
+                    ? "border-primary bg-accent text-primary peer-hover:border-destructive peer-hover:bg-destructive/10"
+                    : "hover:border-primary hover:bg-accent peer-hover:border-destructive peer-hover:bg-destructive/10"
+                }`}
               >
                 {point.prompt}
               </Card>
@@ -116,7 +117,7 @@ export default function PromptPanel({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="relative h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 p-0"
+                      className="relative h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <MdMoreVert className="text-sm" />
@@ -144,7 +145,10 @@ export default function PromptPanel({
         })}
 
         {/* Confirmation popup */}
-        <Dialog open={confirmDeleteIndex !== null} onOpenChange={(open) => !open && handleCancelDelete()}>
+        <Dialog
+          open={confirmDeleteIndex !== null}
+          onOpenChange={(open) => !open && handleCancelDelete()}
+        >
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Are you sure?</DialogTitle>

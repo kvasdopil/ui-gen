@@ -17,6 +17,11 @@ interface ScreenProps {
   onUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
   onDelete: (screenId: string) => void;
   onClone: (screenId: string, pointIndex: number) => void;
+  onOverlayClick?: (
+    center: { x: number; y: number },
+    screenId: string,
+    overlayIndex: number,
+  ) => void;
   screenData: ScreenData | null;
 }
 
@@ -28,6 +33,7 @@ export default function Screen({
   onUpdate,
   onDelete,
   onClone,
+  onOverlayClick,
   screenData,
 }: ScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -38,7 +44,9 @@ export default function Screen({
     screenData?.selectedPromptIndex ?? null,
   );
   const generationInProgressRef = useRef<string | null>(null);
-  const [iframeHeight, setIframeHeight] = useState<number>(844); // Default height
+  const [iframeHeight, setIframeHeight] = useState<number>(
+    screenData?.height || 844, // Use stored height or default
+  );
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iframeWindowRef = useRef<Window | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,13 +141,18 @@ export default function Screen({
         (iframeRef.current?.contentWindow === event.source ||
           iframeWindowRef.current === event.source)
       ) {
-        setIframeHeight(Math.max(844, event.data.height)); // Ensure minimum height
+        const newHeight = Math.max(844, event.data.height); // Ensure minimum height
+        setIframeHeight(newHeight);
+        // Update screenData with new height
+        if (screenData) {
+          onUpdate(id, { height: newHeight });
+        }
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, []);
+  }, [screenData, id, onUpdate]);
 
   // Reset height when content changes
   useEffect(() => {
@@ -278,7 +291,12 @@ export default function Screen({
     if (screenData) {
       setConversationPoints(screenData.conversationPoints);
       setSelectedPromptIndex(screenData.selectedPromptIndex);
+      // Update iframeHeight if screenData has a different height
+      if (screenData.height !== undefined && screenData.height !== iframeHeight) {
+        setIframeHeight(screenData.height);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screenData]);
 
   // Auto-start generation if screenData has conversation points but last one doesn't have HTML
@@ -637,24 +655,38 @@ export default function Screen({
                     height: `${iframeHeight}px`,
                   }}
                 >
-                  {highlights.map((highlight, index) => (
-                    <div
-                      key={index}
-                      className="absolute border-2"
-                      style={{
-                        left: `${highlight.x}px`,
-                        top: `${highlight.y}px`,
-                        width: `${highlight.width}px`,
-                        height: `${highlight.height}px`,
-                        borderColor: highlight.type === "a" ? "#ff00ff" : "#00ffff", // magenta for links, cyan for buttons
-                        backgroundColor:
-                          highlight.type === "a"
-                            ? "rgba(255, 0, 255, 0.1)"
-                            : "rgba(0, 255, 255, 0.1)", // semi-transparent fill
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  ))}
+                  {highlights.map((highlight, index) => {
+                    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+                      e.stopPropagation();
+                      if (onOverlayClick) {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top + rect.height / 2;
+                        onOverlayClick({ x: centerX, y: centerY }, id, index);
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={index}
+                        className="absolute cursor-crosshair border-2"
+                        style={{
+                          left: `${highlight.x}px`,
+                          top: `${highlight.y}px`,
+                          width: `${highlight.width}px`,
+                          height: `${highlight.height}px`,
+                          borderColor: highlight.type === "a" ? "#ff00ff" : "#00ffff", // magenta for links, cyan for buttons
+                          backgroundColor:
+                            highlight.type === "a"
+                              ? "rgba(255, 0, 255, 0.1)"
+                              : "rgba(0, 255, 255, 0.1)", // semi-transparent fill
+                          boxSizing: "border-box",
+                          pointerEvents: "auto",
+                        }}
+                        onMouseDown={handleMouseDown}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </>

@@ -10,7 +10,8 @@ import { Card } from "@/components/ui/card";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
-import type { ScreenData } from "@/lib/types";
+import ArrowLine from "@/components/ArrowLine";
+import type { ScreenData, ConversationPointArrow } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
 // Grid size for snapping
@@ -47,6 +48,13 @@ export default function Home() {
   const createScreenPopupRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const pendingPromptProcessedRef = useRef(false);
+  const [arrowLine, setArrowLine] = useState<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    startScreenId: string;
+    overlayIndex: number;
+  } | null>(null);
+  const hoveredScreenIdRef = useRef<string | null>(null);
 
   // Handle panning - only when clicking on empty space
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -135,6 +143,36 @@ export default function Home() {
     // Only handle dragging if mouse button is pressed
     if (!isMouseDown) return;
 
+    // Handle arrow line drawing
+    if (arrowLine) {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect) {
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+
+        // Check if mouse is over a screen (but not the start screen)
+        // Use elementFromPoint to get the element at mouse position, as e.target might be a child
+        const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+        const screenContainer = elementAtPoint?.closest(
+          "[data-screen-container]",
+        ) as HTMLElement | null;
+        const hoveredScreenId = screenContainer?.id || null;
+
+        // Only update hovered screen if it's different from start screen
+        if (hoveredScreenId && hoveredScreenId !== arrowLine.startScreenId) {
+          hoveredScreenIdRef.current = hoveredScreenId;
+        } else {
+          hoveredScreenIdRef.current = null;
+        }
+
+        setArrowLine({
+          ...arrowLine,
+          end: { x: endX, y: endY },
+        });
+      }
+      return; // Don't handle other dragging when drawing arrow
+    }
+
     // Handle screen dragging
     if (draggedScreenId) {
       const screen = screens.find((s) => s.id === draggedScreenId);
@@ -206,8 +244,96 @@ export default function Home() {
         setIsDragging(false);
         setIsMouseDown(false);
         setDraggedScreenId(null);
+        setArrowLine(null);
         return;
       }
+    }
+
+    // Save arrow when mouse is released (only if connected to a screen)
+    if (arrowLine) {
+      // Check if mouse is over a screen at release time
+      let endScreenId = hoveredScreenIdRef.current;
+
+      // Double-check by looking at the element at mouse position if event is available
+      if (e && !endScreenId) {
+        const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+        const screenContainer = elementAtPoint?.closest(
+          "[data-screen-container]",
+        ) as HTMLElement | null;
+        endScreenId = screenContainer?.id || null;
+
+        // Only allow if it's a different screen from the start
+        if (endScreenId === arrowLine.startScreenId) {
+          endScreenId = null;
+        }
+      }
+
+      // Only save arrow if connected to a screen
+      if (endScreenId) {
+        const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+
+        if (startScreen) {
+          // Find the selected conversation point (or use the last one if none selected)
+          const conversationPointIndex =
+            startScreen.selectedPromptIndex !== null
+              ? startScreen.selectedPromptIndex
+              : startScreen.conversationPoints.length > 0
+                ? startScreen.conversationPoints.length - 1
+                : null;
+
+          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
+            // Get the conversation point
+            const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
+
+            // Initialize arrows array if it doesn't exist
+            const existingArrows = conversationPoint.arrows || [];
+
+            // Remove any existing arrow from the same overlay index
+            const filteredArrows = existingArrows.filter(
+              (arrow) => arrow.overlayIndex !== arrowLine.overlayIndex,
+            );
+
+            // Convert start point from viewport coordinates to content coordinates relative to start screen center
+            // Viewport to content: (viewport - transform) / scale
+            const startContentX = (arrowLine.start.x - viewportTransform.x) / viewportTransform.scale;
+            const startContentY = (arrowLine.start.y - viewportTransform.y) / viewportTransform.scale;
+            // Relative to screen center
+            const startRelativeX = startScreen.position
+              ? startContentX - startScreen.position.x
+              : 0;
+            const startRelativeY = startScreen.position
+              ? startContentY - startScreen.position.y
+              : 0;
+
+            // Add the new arrow
+            const newArrow: ConversationPointArrow = {
+              overlayIndex: arrowLine.overlayIndex,
+              targetScreenId: endScreenId,
+              startPoint: { x: startRelativeX, y: startRelativeY },
+            };
+
+            const updatedArrows = [...filteredArrows, newArrow];
+
+            // Update the conversation point with the new arrows array
+            const updatedConversationPoints = [...startScreen.conversationPoints];
+            updatedConversationPoints[conversationPointIndex] = {
+              ...conversationPoint,
+              arrows: updatedArrows,
+            };
+
+            // Update the screen with the updated conversation points
+            handleScreenUpdate(arrowLine.startScreenId, {
+              conversationPoints: updatedConversationPoints,
+            });
+          }
+        }
+      }
+
+      // Cancel arrow creation (clear state) regardless of whether it was saved
+      setArrowLine(null);
+      hoveredScreenIdRef.current = null;
+      setIsMouseDown(false);
+      return;
     }
 
     // If user didn't drag and clicked on empty space, initiate new screen flow
@@ -494,7 +620,10 @@ export default function Home() {
         conversationPoints: originalScreen.conversationPoints.slice(0, pointIndex + 1),
         selectedPromptIndex: pointIndex,
         position: originalScreen.position
-          ? { x: snapToGrid(originalScreen.position.x + 50), y: snapToGrid(originalScreen.position.y + 50) }
+          ? {
+              x: snapToGrid(originalScreen.position.x + 50),
+              y: snapToGrid(originalScreen.position.y + 50),
+            }
           : { x: snapToGrid(50), y: snapToGrid(50) },
       };
 
@@ -503,6 +632,60 @@ export default function Home() {
       setSelectedScreenId(clonedScreen.id);
     },
     [screens],
+  );
+
+  // Handle overlay click - start arrow from center of clicked overlay
+  const handleOverlayClick = useCallback(
+    (center: { x: number; y: number }, screenId: string, overlayIndex: number) => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect) {
+        const startScreen = screens.find((s) => s.id === screenId);
+        if (startScreen) {
+          // Find the selected conversation point (or use the last one if none selected)
+          const conversationPointIndex =
+            startScreen.selectedPromptIndex !== null
+              ? startScreen.selectedPromptIndex
+              : startScreen.conversationPoints.length > 0
+                ? startScreen.conversationPoints.length - 1
+                : null;
+
+          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
+            // Get the conversation point
+            const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
+
+            // Remove any existing arrow from the same overlay
+            const existingArrows = conversationPoint.arrows || [];
+            const filteredArrows = existingArrows.filter(
+              (arrow) => arrow.overlayIndex !== overlayIndex,
+            );
+
+            // Update the conversation point to remove the arrow
+            const updatedConversationPoints = [...startScreen.conversationPoints];
+            updatedConversationPoints[conversationPointIndex] = {
+              ...conversationPoint,
+              arrows: filteredArrows,
+            };
+
+            // Update the screen
+            handleScreenUpdate(screenId, {
+              conversationPoints: updatedConversationPoints,
+            });
+          }
+        }
+
+        // Convert from viewport (browser window) coordinates to viewport container coordinates
+        const startX = center.x - rect.left;
+        const startY = center.y - rect.top;
+        setArrowLine({
+          start: { x: startX, y: startY },
+          end: { x: startX, y: startY },
+          startScreenId: screenId,
+          overlayIndex,
+        });
+        setIsMouseDown(true);
+      }
+    },
+    [screens, handleScreenUpdate],
   );
 
   // Effect to center screen after selection - DISABLED
@@ -660,6 +843,94 @@ export default function Home() {
           transformOrigin: "0 0",
         }}
       >
+        {/* Arrow line overlay - rendered in content coordinates */}
+        {arrowLine &&
+          (() => {
+            const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+            const endScreenId = hoveredScreenIdRef.current;
+            const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
+
+            // Convert from viewport coordinates to content coordinates
+            const startContentX =
+              (arrowLine.start.x - viewportTransform.x) / viewportTransform.scale;
+            const startContentY =
+              (arrowLine.start.y - viewportTransform.y) / viewportTransform.scale;
+            const endContentX = (arrowLine.end.x - viewportTransform.x) / viewportTransform.scale;
+            const endContentY = (arrowLine.end.y - viewportTransform.y) / viewportTransform.scale;
+
+            const startScreenBounds = startScreen?.position
+              ? {
+                  x: startScreen.position.x,
+                  y: startScreen.position.y,
+                  width: 390,
+                  height: startScreen.height || 844,
+                }
+              : undefined;
+            const endScreenBounds = endScreen?.position
+              ? {
+                  x: endScreen.position.x,
+                  y: endScreen.position.y,
+                  width: 390,
+                  height: endScreen.height || 844,
+                }
+              : undefined;
+            return (
+              <ArrowLine
+                start={{ x: startContentX, y: startContentY }}
+                end={{ x: endContentX, y: endContentY }}
+                startScreenBounds={startScreenBounds}
+                endScreenBounds={endScreenBounds}
+              />
+            );
+          })()}
+        {/* Render all stored arrows from conversation points */}
+        {screens.flatMap((screen) => {
+          if (!screen.position) return [];
+
+          return screen.conversationPoints.flatMap((conversationPoint, conversationPointIndex) => {
+            const arrows = conversationPoint.arrows || [];
+            return arrows.map((arrow, arrowIndex) => {
+              const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+
+              // Calculate start point: use stored startPoint if available, otherwise use screen center
+              const startContentX = arrow.startPoint
+                ? screen.position!.x + arrow.startPoint.x
+                : screen.position!.x;
+              const startContentY = arrow.startPoint
+                ? screen.position!.y + arrow.startPoint.y
+                : screen.position!.y;
+
+              // End point is target screen center
+              const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
+              const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
+
+              const startScreenBounds = {
+                x: screen.position!.x,
+                y: screen.position!.y,
+                width: 390,
+                height: screen.height || 844,
+              };
+              const endScreenBounds = endScreen?.position
+                ? {
+                    x: endScreen.position.x,
+                    y: endScreen.position.y,
+                    width: 390,
+                    height: endScreen.height || 844,
+                  }
+                : undefined;
+
+              return (
+                <ArrowLine
+                  key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
+                  start={{ x: startContentX, y: startContentY }}
+                  end={{ x: endContentX, y: endContentY }}
+                  startScreenBounds={startScreenBounds}
+                  endScreenBounds={endScreenBounds}
+                />
+              );
+            });
+          });
+        })}
         {!isLoadingScreens && screens.length === 0 && (
           <div
             style={{
@@ -705,6 +976,7 @@ export default function Home() {
                 onUpdate={handleScreenUpdate}
                 onDelete={handleScreenDelete}
                 onClone={handleScreenClone}
+                onOverlayClick={handleOverlayClick}
                 screenData={screen}
               />
             </div>

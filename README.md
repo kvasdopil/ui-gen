@@ -36,6 +36,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
+- ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom
+- 💾 **Persistent Arrows**: Arrows are stored with conversation entry metadata (along with HTML) - each arrow is identified by clickable index and contains target screen ID, automatically saved and restored
+- 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
 
 ## User Stories
 
@@ -75,6 +78,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
 - **As a** user, **I want** my camera position and zoom level to be saved, **so that** I can continue from where I left off when I reload the page
 - **As a** user, **I want to** toggle visibility of clickable elements (links and buttons) in generated designs, **so that** I can easily identify interactive elements
+- **As a** user, **I want to** create visual connections between screens by clicking on clickable overlays and dragging to other screens, **so that** I can document relationships and user flows between different screens
+- **As a** user, **I want** arrows to be automatically saved with my conversation history, **so that** my screen connections persist across page reloads
+- **As a** user, **I want** arrows to be associated with specific conversation points, **so that** each version of a screen can have its own set of connections
 
 ### User Interface
 
@@ -357,6 +363,21 @@ yarn dev
 9. You can continue making modifications iteratively - each modification builds on the full conversation history
 10. Each screen maintains its own independent conversation history
 
+### Creating Arrow Connections
+
+1. **Enable Clickable Highlights**: Click the hand icon next to a screen's title to show clickable overlays
+2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow
+3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor
+4. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
+5. **Cancel**: Release the mouse button outside of any screen to cancel arrow creation
+6. **One Arrow Per Overlay**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
+7. **Persistent Arrows**: Arrows are automatically saved with the conversation entry metadata (along with HTML) - each arrow is identified by its clickable index and contains the target screen ID
+8. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
+9. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
+10. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
+11. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
+12. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
+
 ### Example Prompts
 
 - "A recipe card with an image, title, ingredients list, and cooking instructions"
@@ -460,12 +481,18 @@ The `/api/create` endpoint:
   - Uses functional state updates in `handleScreenUpdate` to prevent race conditions when multiple screens update simultaneously
   - Always preserves screen positions during updates unless explicitly changed
   - Z-index management: newer screens appear above older ones, selected screens always on top
+  - **Arrow Management**: Creates and stores arrows in conversation point metadata
+    - Stores arrows in `ConversationPoint.arrows` array with `overlayIndex` and `targetScreenId`
+    - Renders arrows from all conversation points across all screens
+    - Uses actual screen height from `ScreenData.height` for boundary calculations
+    - Removes arrows when clicking on overlays to start new arrow creation
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Manages conversation points state (prompt, HTML, title, timestamp for each point)
   - Tracks selected prompt index for output history viewing
   - **Flexible Layout**: Screen container has flexible width (stretches horizontally) with min-height of 844px
   - **Dynamic Iframe Height**: Iframe width is fixed at 390px, height adjusts dynamically based on content (minimum 844px)
   - Uses `postMessage` API to communicate content height from iframe to parent
+  - **Height Persistence**: Screen height is stored in `ScreenData.height` and used for accurate arrow boundary detection
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
   - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
@@ -474,6 +501,17 @@ The `/api/create` endpoint:
     - Overlay layer positioned absolutely over iframe without modifying generated content
     - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
     - State is not persisted (resets on page reload)
+  - **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays
+    - Click any highlighted overlay to start an arrow from its center
+    - Drag to another screen to create a connection
+    - Arrows use Bezier curves that connect screen boundaries perpendicularly
+    - Each overlay can only have one outgoing arrow (new arrows replace old ones)
+    - **Persistent Storage**: Arrows are stored in `ConversationPoint.arrows` array along with HTML metadata
+    - Each arrow contains: `overlayIndex` (clickable index) and `targetScreenId` (destination screen)
+    - Arrows are automatically saved with conversation entries and restored on page reload
+    - Arrows move with screens when you drag them
+    - Arrows scale with zoom and maintain consistent curvature
+    - **Dynamic Height**: Screen heights are tracked and used for accurate boundary detection (supports screens taller than 844px)
   - **HTML Wrapper**: Simplified implementation with CSS ensuring html, body, and root content element have min-height: 844px
   - Automatically starts generation when created with initial conversation point (for new screens from form)
   - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts in history)
@@ -489,6 +527,17 @@ The `/api/create` endpoint:
   - Handles deletion of conversation points with automatic selection adjustment
   - Removes entire screen when last conversation point is deleted
   - Persists all changes immediately via onUpdate callback
+  - **Arrow Connections**: Handles overlay clicks to start arrow creation
+    - Passes overlay center coordinates and screen ID to parent component
+    - Overlay click handlers calculate center position in viewport coordinates
+- **ArrowLine.tsx**: Arrow component rendering Bezier curves between screens
+  - Renders arrows in content coordinates as part of the scalable viewport
+  - Calculates line-rectangle intersections to find connection points on screen boundaries
+  - Uses actual screen height from `ScreenData.height` for accurate boundary detection (not fixed 844px)
+  - Creates Bezier curves that are perpendicular to screen edges at intersection points
+  - Arrows scale with zoom and maintain consistent curvature
+  - Arrow tip positioned at destination screen boundary
+  - Uses SVG with viewBox for proper scaling
 - **PromptPanel.tsx**: History panel component displaying conversation and modification interface
   - Displays all conversation points (prompts) as clickable cards
   - Highlights the currently selected prompt with blue border and background
@@ -510,16 +559,19 @@ The `/api/create` endpoint:
 ### Development Workflow
 
 1. **Start Development Server**:
+
    ```bash
    yarn dev
    ```
 
 2. **Run Linting**:
+
    ```bash
    yarn lint
    ```
 
 3. **Format Code**:
+
    ```bash
    yarn format
    ```
@@ -647,6 +699,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 - [x] New screen creation flow with positioned screens
 - [x] Draggable screens for repositioning
 - [x] Camera position and zoom persistence
+- [x] Arrow connections between screens with Bezier curves
 - [ ] Custom Tailwind configuration
 - [ ] Better error handling and user feedback
 - [ ] Streaming responses for faster perceived performance
