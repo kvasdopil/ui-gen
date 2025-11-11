@@ -23,6 +23,7 @@ interface ScreenProps {
     overlayIndex: number,
   ) => void;
   screenData: ScreenData | null;
+  onCenterAndZoom: (screenId: string) => void;
 }
 
 export default function Screen({
@@ -35,6 +36,7 @@ export default function Screen({
   onClone,
   onOverlayClick,
   screenData,
+  onCenterAndZoom,
 }: ScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [conversationPoints, setConversationPoints] = useState<ConversationPoint[]>(
@@ -80,6 +82,7 @@ export default function Screen({
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; min-height: 844px; }
     body > * { min-height: 844px; }
+    a, button { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -91,8 +94,111 @@ export default function Screen({
         window.parent.postMessage({ type: 'iframe-height', height: height }, '*');
       }
       
+      function preventNavigation() {
+        // Prevent all link clicks from navigating (including hash links)
+        document.addEventListener('click', function(e) {
+          const target = e.target.closest('a[href]');
+          if (target) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+        }, true); // Use capture phase to catch early
+        
+        // Prevent form submissions that would navigate
+        document.addEventListener('submit', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }, true);
+        
+        // Prevent hashchange events
+        window.addEventListener('hashchange', function(e) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          // Reset hash to empty
+          try {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+          } catch (err) {
+            // Ignore errors
+          }
+        }, true);
+        
+        // Prevent window.open
+        window.open = function() {
+          console.warn('Navigation prevented: window.open()');
+          return null;
+        };
+        
+        // Prevent programmatic navigation via location methods
+        try {
+          const originalReplace = window.location.replace;
+          const originalAssign = window.location.assign;
+          
+          window.location.replace = function() {
+            console.warn('Navigation prevented: location.replace()');
+          };
+          
+          window.location.assign = function() {
+            console.warn('Navigation prevented: location.assign()');
+          };
+          
+          // Prevent direct location.href assignment
+          let locationHref = window.location.href.split('#')[0]; // Remove hash from initial href
+          Object.defineProperty(window.location, 'href', {
+            get: function() {
+              return locationHref;
+            },
+            set: function(value) {
+              // Remove hash from the value
+              const urlWithoutHash = value.split('#')[0];
+              if (urlWithoutHash !== locationHref) {
+                console.warn('Navigation prevented: location.href =', value);
+              }
+            }
+          });
+          
+          // Prevent location.hash changes
+          let locationHash = '';
+          Object.defineProperty(window.location, 'hash', {
+            get: function() {
+              return locationHash;
+            },
+            set: function(value) {
+              console.warn('Navigation prevented: location.hash =', value);
+            }
+          });
+          
+          // Prevent history.pushState/replaceState with hash
+          const originalPushState = history.pushState;
+          const originalReplaceState = history.replaceState;
+          
+          history.pushState = function() {
+            const url = arguments[2];
+            if (url && typeof url === 'string' && url.includes('#')) {
+              console.warn('Navigation prevented: history.pushState() with hash');
+              return;
+            }
+            return originalPushState.apply(history, arguments);
+          };
+          
+          history.replaceState = function() {
+            const url = arguments[2];
+            if (url && typeof url === 'string' && url.includes('#')) {
+              console.warn('Navigation prevented: history.replaceState() with hash');
+              return;
+            }
+            return originalReplaceState.apply(history, arguments);
+          };
+        } catch (e) {
+          // Some browsers may restrict location property modification
+          console.debug('Could not override location methods:', e);
+        }
+      }
+      
       function init() {
         sendHeight();
+        preventNavigation();
         if (window.ResizeObserver) {
           new ResizeObserver(() => requestAnimationFrame(sendHeight)).observe(document.body);
         }
@@ -560,6 +666,18 @@ export default function Screen({
     }
   };
 
+  // Handle double-click to activate, center, and zoom
+  const handleContainerDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Select the screen first if not already selected
+    if (!isSelected) {
+      onScreenClick(id);
+    }
+    // Center and zoom to 100%
+    onCenterAndZoom(id);
+  };
+
   return (
     <div className="relative flex flex-col items-stretch justify-center px-6 text-slate-900 dark:text-slate-100">
       {/* Title - displayed above screen for both active and inactive */}
@@ -607,15 +725,26 @@ export default function Screen({
         {/* Screen Container with Iframe */}
         <div
           ref={containerRef}
-          className={`relative inline-block shadow-lg transition-all ${isSelected
+          className={`relative inline-block shadow-lg transition-all select-none ${isSelected
             ? "border-2 border-blue-500"
             : "border-2 border-transparent hover:border-blue-500"
             }`}
           style={{
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
             cursor: isSelected ? "default" : "pointer",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            MozUserSelect: "none",
+            msUserSelect: "none",
           }}
           onClick={handleContainerClick}
+          onDoubleClick={handleContainerDoubleClick}
+          onMouseDown={(e) => {
+            // Prevent text selection on double-click
+            if (e.detail > 1) {
+              e.preventDefault();
+            }
+          }}
         >
           {/* Loading Spinner Overlay - only covers Screen component */}
           {isLoading && (
@@ -642,7 +771,7 @@ export default function Screen({
                 style={{
                   width: "390px",
                   height: `${iframeHeight}px`,
-                  pointerEvents: isSelected ? "auto" : "none",
+                  pointerEvents: "none",
                 }}
                 onLoad={() => {
                   // Update ref when iframe loads
@@ -688,7 +817,7 @@ export default function Screen({
                               ? "rgba(255, 0, 255, 0.1)"
                               : "rgba(0, 255, 255, 0.1)", // semi-transparent fill
                           boxSizing: "border-box",
-                          pointerEvents: "auto",
+                          pointerEvents: "none",
                         }}
                         onMouseDown={handleMouseDown}
                       />

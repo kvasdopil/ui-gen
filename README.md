@@ -35,6 +35,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
 - 🖱️ **Draggable Screens**: Drag unselected screens to reposition them; panning is disabled during screen drag
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
+- 🚫 **Non-Interactive Screens**: Screen contents (iframe and overlays) are always non-interactive to prevent accidental clicks while navigating
+- 🖱️ **Double-Click to Activate**: Double-click any screen to activate it, center the camera, and zoom to 100%
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
 - ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom
@@ -69,7 +71,10 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see an empty state message when no screens exist, **so that** I know how to get started (right-click to create)
 - **As a** user, **I want to** pan the viewport by dragging empty space, **so that** I can navigate around multiple screens
 - **As a** user, **I want to** zoom the viewport using scroll (10% to 100%), **so that** I can see screens at different scales
+- **As a** user, **I want** zoom operations to be smooth without jitter, **so that** I can comfortably navigate at different zoom levels
 - **As a** user, **I want to** click a screen to select it, **so that** I can interact with it and see its prompt panel
+- **As a** user, **I want to** double-click a screen to activate it, center the camera, and zoom to 100%, **so that** I can quickly focus on a specific screen
+- **As a** user, **I want** screen contents to be non-interactive, **so that** I don't accidentally trigger actions while navigating or panning
 - **As a** user, **I want to** drag unselected screens to reposition them, **so that** I can organize my screens spatially
 - **As a** user, **I want** panning to be disabled when dragging a screen, **so that** I can move screens without accidentally panning the viewport
 - **As a** user, **I want** selected screens to remain non-draggable, **so that** I can interact with them without accidentally moving them
@@ -322,14 +327,16 @@ yarn dev
 ### Navigating Multiple Screens
 
 1. **Panning**: Press and drag on empty space to pan around the viewport
-2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale)
+2. **Zooming**: Use your mouse wheel to zoom in/out (10% to 100% scale) - smooth zoom without jitter
 3. **Selecting Screens**: Click any screen to select it and view its prompt panel (this will also close the new screen form if it's open)
-4. **Dragging Screens**: Click and drag unselected screens to reposition them; panning is automatically disabled during screen drag
-5. **Visual Feedback**: Selected screens display a 2px blue border and appear on top; unselected screens show a grab cursor
-6. **Deselecting**: Click on empty space to deselect the current screen
-7. **Prompt Panel**: The prompt history panel only appears when a screen is selected
-8. **Z-Index**: Newer screens appear above older ones; selected screens always appear on top
-9. **Camera Persistence**: Your camera position and zoom level are automatically saved and restored when you reload the page
+4. **Double-Click to Focus**: Double-click any screen to activate it, center the camera on it, and zoom to 100% - works for both selected and unselected screens
+5. **Non-Interactive Content**: Screen contents (iframe and clickable overlays) are always non-interactive to prevent accidental clicks while navigating
+6. **Dragging Screens**: Click and drag unselected screens to reposition them; panning is automatically disabled during screen drag
+7. **Visual Feedback**: Selected screens display a 2px blue border and appear on top; unselected screens show a grab cursor
+8. **Deselecting**: Click on empty space to deselect the current screen
+9. **Prompt Panel**: The prompt history panel only appears when a screen is selected
+10. **Z-Index**: Newer screens appear above older ones; selected screens always appear on top
+11. **Camera Persistence**: Your camera position and zoom level are automatically saved and restored when you reload the page
 
 ### Viewing Output History
 
@@ -476,8 +483,10 @@ The `/api/create` endpoint:
 
 - **page.tsx**: Main viewport component managing multiple screens, pan/zoom, selection, and dragging
   - Manages viewport transform state (pan position and zoom scale)
+  - Uses refs to prevent rerenders during zoom operations for smooth performance
   - Handles panning via mouse press and drag on empty space
   - Handles zooming via mouse wheel (10% to 100%) with non-passive event listener
+  - Zoom handler uses refs instead of state dependencies to prevent event listener recreation and jitter
   - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
   - **Empty State**: Displays "Right-click to create your first screen" message when no screens exist, positioned at 0,0 in viewport coordinates (centered on first load)
@@ -492,6 +501,7 @@ The `/api/create` endpoint:
   - Uses functional state updates in `handleScreenUpdate` to prevent race conditions when multiple screens update simultaneously
   - Always preserves screen positions during updates unless explicitly changed
   - Z-index management: newer screens appear above older ones, selected screens always on top
+  - **Double-Click Handler**: Centers camera and zooms to 100% when double-clicking screens
   - **Arrow Management**: Creates and stores arrows in conversation point metadata
     - Stores arrows in `ConversationPoint.arrows` array with `overlayIndex` and `targetScreenId`
     - Renders arrows from all conversation points across all screens
@@ -506,12 +516,16 @@ The `/api/create` endpoint:
   - **Height Persistence**: Screen height is stored in `ScreenData.height` and used for accurate arrow boundary detection
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
+  - **Non-Interactive Content**: Iframe and overlay highlights are always non-interactive (`pointerEvents: "none"`) to prevent accidental clicks while navigating
+  - **Double-Click Handler**: Double-clicking a screen activates it, centers the camera, and zooms to 100% - works for both selected and unselected screens
+  - **Selection Prevention**: Prevents text/element selection on double-click using CSS `user-select: none` and event prevention
   - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
     - Highlights `<a>` elements with `href` attribute in magenta
     - Highlights `<button>` elements in cyan
     - Overlay layer positioned absolutely over iframe without modifying generated content
     - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
     - State is not persisted (resets on page reload)
+    - Highlights are non-interactive (cannot be clicked)
   - **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays
     - Click any highlighted overlay to start an arrow from its center
     - Drag to another screen to create a connection
@@ -692,15 +706,17 @@ These can be adjusted in `src/app/api/create/route.ts`
 
 - **Authentication Required**: UI generation requires Google OAuth authentication
 - Generated UIs are **non-interactive** (no JavaScript, no event handlers)
+- Screen contents (iframe and overlays) are **always non-interactive** to prevent accidental clicks while navigating
 - Tailwind CDN is used (not recommended for production, but suitable for mockups)
 - Generated HTML is sanitized but should be reviewed for production use
 - Screen size is fixed at 390px × 844px (mobile only)
-- Zoom is limited to 10% to 100% scale
+- Zoom is limited to 10% to 100% scale with smooth performance (no jitter)
 - Unselected screens can be dragged to reposition them
 - Panning is automatically disabled when dragging a screen
 - Selected screens are non-draggable to allow interaction with their content
 - Camera position and zoom are persisted and restored on page reload
 - New screen form appears on mouse release (not mouse down) to prevent accidental triggers while dragging
+- Double-click any screen to activate it, center the camera, and zoom to 100%
 
 ## Future Improvements
 

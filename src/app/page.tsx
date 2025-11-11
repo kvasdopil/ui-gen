@@ -29,6 +29,7 @@ export default function Home() {
   const [isLoadingViewport, setIsLoadingViewport] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   const [viewportTransform, setViewportTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const viewportTransformRef = useRef({ x: 0, y: 0, scale: 1 });
   const viewportSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const screensSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -212,11 +213,14 @@ export default function Home() {
     }
 
     if (isDragging) {
-      setViewportTransform({
-        ...viewportTransform,
+      const currentTransform = viewportTransformRef.current;
+      const newTransform = {
+        ...currentTransform,
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y,
-      });
+      };
+      viewportTransformRef.current = newTransform;
+      setViewportTransform(newTransform);
     }
   };
 
@@ -387,28 +391,31 @@ export default function Home() {
   };
 
   // Handle zooming with scroll (10% to 100%)
-  const handleWheel = useCallback(
-    (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY * -0.001;
-      const newScale = Math.min(Math.max(0.1, viewportTransform.scale + delta), 1);
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY * -0.001;
+    const currentTransform = viewportTransformRef.current;
+    const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 1);
 
-      // Zoom towards mouse position
-      const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect) {
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+    // Zoom towards mouse position
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (rect) {
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
 
-        const scaleChange = newScale / viewportTransform.scale;
-        setViewportTransform({
-          x: mouseX - (mouseX - viewportTransform.x) * scaleChange,
-          y: mouseY - (mouseY - viewportTransform.y) * scaleChange,
-          scale: newScale,
-        });
-      }
-    },
-    [viewportTransform],
-  );
+      const scaleChange = newScale / currentTransform.scale;
+      const newTransform = {
+        x: mouseX - (mouseX - currentTransform.x) * scaleChange,
+        y: mouseY - (mouseY - currentTransform.y) * scaleChange,
+        scale: newScale,
+      };
+
+      // Update ref immediately for next event
+      viewportTransformRef.current = newTransform;
+      // Update state for rendering
+      setViewportTransform(newTransform);
+    }
+  }, []);
 
   // Add wheel event listener with passive: false to allow preventDefault
   useEffect(() => {
@@ -422,83 +429,86 @@ export default function Home() {
     };
   }, [handleWheel]);
 
-  // Center and zoom to 100% when a screen is selected - DISABLED
-  // const centerAndZoomScreen = useCallback(
-  //   (screenId: string) => {
-  //     // Use requestAnimationFrame to ensure DOM is updated
-  //     requestAnimationFrame(() => {
-  //       const screenElement = document.getElementById(screenId);
-  //       if (screenElement && viewportRef.current) {
-  //         const viewportRect = viewportRef.current.getBoundingClientRect();
+  // Center and zoom to 100% when a screen is selected
+  const centerAndZoomScreen = useCallback(
+    (screenId: string) => {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        const screenElement = document.getElementById(screenId);
+        if (screenElement && viewportRef.current) {
+          const viewportRect = viewportRef.current.getBoundingClientRect();
 
-  //         // Find the screen data to get its position in content coordinates
-  //         const screen = screens.find((s) => s.id === screenId);
+          // Find the screen data to get its position in content coordinates
+          const screen = screens.find((s) => s.id === screenId);
 
-  //         let screenCenterXContent: number;
-  //         let screenCenterYContent: number;
+          let screenCenterXContent: number;
+          let screenCenterYContent: number;
 
-  //         if (screen?.position) {
-  //           // Use stored position
-  //           screenCenterXContent = screen.position.x;
-  //           screenCenterYContent = screen.position.y;
-  //         } else {
-  //           // Fallback: get position from DOM (for initial screen or screens without position)
-  //           const screenRect = screenElement.getBoundingClientRect();
+          if (screen?.position) {
+            // Use stored position
+            screenCenterXContent = screen.position.x;
+            screenCenterYContent = screen.position.y;
+          } else {
+            // Fallback: get position from DOM (for initial screen or screens without position)
+            const screenRect = screenElement.getBoundingClientRect();
 
-  //           // Get current transform from state
-  //           setViewportTransform((currentTransform) => {
-  //             // Convert from viewport coordinates to content coordinates
-  //             // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
-  //             const screenCenterXViewport =
-  //               screenRect.left + screenRect.width / 2 - viewportRect.left;
-  //             const screenCenterYViewport =
-  //               screenRect.top + screenRect.height / 2 - viewportRect.top;
+            // Get current transform from ref
+            const currentTransform = viewportTransformRef.current;
+            // Convert from viewport coordinates to content coordinates
+            // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
+            const screenCenterXViewport =
+              screenRect.left + screenRect.width / 2 - viewportRect.left;
+            const screenCenterYViewport =
+              screenRect.top + screenRect.height / 2 - viewportRect.top;
 
-  //             // Convert to content coordinates
-  //             screenCenterXContent =
-  //               (screenCenterXViewport - currentTransform.x) / currentTransform.scale;
-  //             screenCenterYContent =
-  //               (screenCenterYViewport - currentTransform.y) / currentTransform.scale;
+            // Convert to content coordinates
+            screenCenterXContent =
+              (screenCenterXViewport - currentTransform.x) / currentTransform.scale;
+            screenCenterYContent =
+              (screenCenterYViewport - currentTransform.y) / currentTransform.scale;
 
-  //             // Viewport center in viewport coordinates
-  //             const viewportCenterX = viewportRect.width / 2;
-  //             const viewportCenterY = viewportRect.height / 2;
+            // Viewport center in viewport coordinates
+            const viewportCenterX = viewportRect.width / 2;
+            const viewportCenterY = viewportRect.height / 2;
 
-  //             // Calculate new transform to center the screen at scale 1
-  //             const newX = viewportCenterX - screenCenterXContent;
-  //             const newY = viewportCenterY - screenCenterYContent;
+            // Calculate new transform to center the screen at scale 1
+            const newX = viewportCenterX - screenCenterXContent;
+            const newY = viewportCenterY - screenCenterYContent;
 
-  //             return {
-  //               x: newX,
-  //               y: newY,
-  //               scale: 1,
-  //             };
-  //           });
-  //           return; // Early return for fallback case
-  //         }
+            const newTransform = {
+              x: newX,
+              y: newY,
+              scale: 1,
+            };
+            viewportTransformRef.current = newTransform;
+            setViewportTransform(newTransform);
+            return; // Early return for fallback case
+          }
 
-  //         // Viewport center in viewport coordinates
-  //         const viewportCenterX = viewportRect.width / 2;
-  //         const viewportCenterY = viewportRect.height / 2;
+          // Viewport center in viewport coordinates
+          const viewportCenterX = viewportRect.width / 2;
+          const viewportCenterY = viewportRect.height / 2;
 
-  //         // To center the screen, we need:
-  //         // viewportCenter = screenCenterContent * scale + transform
-  //         // So: transform = viewportCenter - screenCenterContent * scale
-  //         // With scale = 1:
-  //         const newX = viewportCenterX - screenCenterXContent;
-  //         const newY = viewportCenterY - screenCenterYContent;
+          // To center the screen, we need:
+          // viewportCenter = screenCenterContent * scale + transform
+          // So: transform = viewportCenter - screenCenterContent * scale
+          // With scale = 1:
+          const newX = viewportCenterX - screenCenterXContent;
+          const newY = viewportCenterY - screenCenterYContent;
 
-  //         // Apply the transform and reset scale to 1
-  //         setViewportTransform({
-  //           x: newX,
-  //           y: newY,
-  //           scale: 1,
-  //         });
-  //       }
-  //     });
-  //   },
-  //   [screens],
-  // );
+          // Apply the transform and reset scale to 1
+          const newTransform = {
+            x: newX,
+            y: newY,
+            scale: 1,
+          };
+          viewportTransformRef.current = newTransform;
+          setViewportTransform(newTransform);
+        }
+      });
+    },
+    [screens],
+  );
 
   // Handle screen creation
   const handleScreenCreate = useCallback((screenData: Omit<ScreenData, "id">) => {
@@ -718,6 +728,7 @@ export default function Home() {
         // Load viewport transform
         const loadedTransform = await storage.loadViewportTransform();
         if (loadedTransform) {
+          viewportTransformRef.current = loadedTransform;
           setViewportTransform(loadedTransform);
         } else if (loadedScreens.length === 0) {
           // Center viewport when there are no screens and no saved transform (first time)
@@ -725,11 +736,13 @@ export default function Home() {
           requestAnimationFrame(() => {
             if (viewportRef.current) {
               const rect = viewportRef.current.getBoundingClientRect();
-              setViewportTransform({
+              const initialTransform = {
                 x: rect.width / 2,
                 y: rect.height / 2,
                 scale: 1,
-              });
+              };
+              viewportTransformRef.current = initialTransform;
+              setViewportTransform(initialTransform);
             }
           });
         }
@@ -767,6 +780,11 @@ export default function Home() {
       }
     };
   }, [screens, isLoadingScreens]);
+
+  // Keep ref in sync with state (safety measure)
+  useEffect(() => {
+    viewportTransformRef.current = viewportTransform;
+  }, [viewportTransform]);
 
   // Save viewport transform to storage whenever it changes (debounced)
   useEffect(() => {
@@ -989,6 +1007,7 @@ export default function Home() {
                 onClone={handleScreenClone}
                 onOverlayClick={handleOverlayClick}
                 screenData={screen}
+                onCenterAndZoom={centerAndZoomScreen}
               />
             </div>
           );
