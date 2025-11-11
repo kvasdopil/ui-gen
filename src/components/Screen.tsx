@@ -594,6 +594,13 @@ export default function Screen({
             onPromptSelect={handlePromptSelect}
             onDeletePoint={handleDeletePoint}
             onClone={(pointIndex) => onClone(id, pointIndex)}
+            screenName={screenTitle}
+            getHtmlForPoint={(pointIndex) => {
+              if (pointIndex >= 0 && pointIndex < conversationPoints.length) {
+                return conversationPoints[pointIndex].html || "";
+              }
+              return "";
+            }}
           />
         )}
 

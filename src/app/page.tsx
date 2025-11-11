@@ -34,8 +34,6 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [clickPosition, setClickPosition] = useState<{ x: number; y: number } | null>(null);
-  const [wasEmptySpaceClick, setWasEmptySpaceClick] = useState(false);
   const [draggedScreenId, setDraggedScreenId] = useState<string | null>(null);
   const [screenDragStart, setScreenDragStart] = useState({ x: 0, y: 0, screenX: 0, screenY: 0 });
   const [isDraggingScreen, setIsDraggingScreen] = useState(false);
@@ -68,6 +66,11 @@ export default function Home() {
     // Don't initiate new screen flow if clicking on the create screen popup itself
     if (createScreenPopupRef.current?.contains(target)) {
       return;
+    }
+
+    // Hide popup on any left click (unless clicking on popup/form itself)
+    if (isCreateScreenPopupMode) {
+      setIsCreateScreenPopupMode(false);
     }
 
     // Check if clicking on a screen container
@@ -108,23 +111,8 @@ export default function Home() {
     const isEmptySpace = isWithinViewport && !screenContainer;
 
     if (isEmptySpace) {
-      // Store whether a screen was selected before we deselect (for popup logic)
-      const hadSelectedScreen = selectedScreenId !== null;
-
       // Unselect screen when clicking on empty space
       setSelectedScreenId(null);
-
-      // Store click position and that it was empty space for handling on mouse up
-      // Only show popup if no screen was selected (not if we just deselected one)
-      const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect) {
-        setClickPosition({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-        // Only mark as empty space click if no screen was selected (allows popup on second click)
-        setWasEmptySpaceClick(!hadSelectedScreen);
-      }
 
       // Set drag start position for potential dragging
       setDragStart({
@@ -132,10 +120,6 @@ export default function Home() {
         y: e.clientY - viewportTransform.y,
       });
       setIsMouseDown(true);
-    } else {
-      // Reset click tracking if not empty space
-      setClickPosition(null);
-      setWasEmptySpaceClick(false);
     }
   };
 
@@ -336,20 +320,7 @@ export default function Home() {
       return;
     }
 
-    // If user didn't drag and clicked on empty space, initiate new screen flow
-    if (!isDragging && !draggedScreenId && wasEmptySpaceClick && clickPosition) {
-      // If not already in create screen popup mode, initiate it
-      if (!isCreateScreenPopupMode && !isNewScreenMode) {
-        setNewScreenPosition(clickPosition);
-        setIsCreateScreenPopupMode(true);
-      } else if (isCreateScreenPopupMode) {
-        // If already in popup mode and clicking outside, dismiss it
-        setIsCreateScreenPopupMode(false);
-      } else if (isNewScreenMode) {
-        // If already in new screen mode and clicking outside, cancel it (input is preserved)
-        setIsNewScreenMode(false);
-      }
-    }
+    // Left click on empty space now only deselects (popup moved to right-click)
 
     // Handle screen click vs drag
     if (draggedScreenId) {
@@ -371,8 +342,48 @@ export default function Home() {
     setIsMouseDown(false);
     setIsDraggingScreen(false);
     setDraggedScreenId(null);
-    setClickPosition(null);
-    setWasEmptySpaceClick(false);
+  };
+
+  // Handle right-click to show new screen menu
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default browser context menu
+
+    const target = e.target as HTMLElement;
+
+    // Don't show menu if clicking on the new screen form itself
+    if (newScreenFormRef.current?.contains(target)) {
+      return;
+    }
+
+    // Don't show menu if clicking on the create screen popup itself
+    if (createScreenPopupRef.current?.contains(target)) {
+      return;
+    }
+
+    // Check if clicking on a screen container
+    const screenContainer = target.closest("[data-screen-container]") as HTMLElement | null;
+
+    // Only show menu on empty space (not on screens)
+    if (!screenContainer) {
+      // Check if clicking within viewport
+      const isWithinViewport = viewportRef.current?.contains(target);
+      if (isWithinViewport) {
+        const rect = viewportRef.current?.getBoundingClientRect();
+        if (rect) {
+          const position = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          };
+          setNewScreenPosition(position);
+          // Toggle popup: if already open, close it; otherwise open it
+          if (isCreateScreenPopupMode) {
+            setIsCreateScreenPopupMode(false);
+          } else {
+            setIsCreateScreenPopupMode(true);
+          }
+        }
+      }
+    }
   };
 
   // Handle zooming with scroll (10% to 100%)
@@ -621,15 +632,14 @@ export default function Home() {
         selectedPromptIndex: pointIndex,
         position: originalScreen.position
           ? {
-              x: snapToGrid(originalScreen.position.x + 50),
-              y: snapToGrid(originalScreen.position.y + 50),
-            }
+            x: snapToGrid(originalScreen.position.x + 50),
+            y: snapToGrid(originalScreen.position.y + 50),
+          }
           : { x: snapToGrid(50), y: snapToGrid(50) },
       };
 
       setScreens((prevScreens) => [...prevScreens, clonedScreen]);
-      // Select the cloned screen
-      setSelectedScreenId(clonedScreen.id);
+      // Don't auto-select the cloned screen
     },
     [screens],
   );
@@ -833,6 +843,7 @@ export default function Home() {
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onContextMenu={handleContextMenu}
       style={{ cursor: isDraggingScreen ? "grabbing" : isDragging ? "grabbing" : "grab" }}
     >
       <UserAvatar />
@@ -860,19 +871,19 @@ export default function Home() {
 
             const startScreenBounds = startScreen?.position
               ? {
-                  x: startScreen.position.x,
-                  y: startScreen.position.y,
-                  width: 390,
-                  height: startScreen.height || 844,
-                }
+                x: startScreen.position.x,
+                y: startScreen.position.y,
+                width: 390,
+                height: startScreen.height || 844,
+              }
               : undefined;
             const endScreenBounds = endScreen?.position
               ? {
-                  x: endScreen.position.x,
-                  y: endScreen.position.y,
-                  width: 390,
-                  height: endScreen.height || 844,
-                }
+                x: endScreen.position.x,
+                y: endScreen.position.y,
+                width: 390,
+                height: endScreen.height || 844,
+              }
               : undefined;
             return (
               <ArrowLine
@@ -912,11 +923,11 @@ export default function Home() {
               };
               const endScreenBounds = endScreen?.position
                 ? {
-                    x: endScreen.position.x,
-                    y: endScreen.position.y,
-                    width: 390,
-                    height: endScreen.height || 844,
-                  }
+                  x: endScreen.position.x,
+                  y: endScreen.position.y,
+                  width: 390,
+                  height: endScreen.height || 844,
+                }
                 : undefined;
 
               return (
@@ -940,9 +951,9 @@ export default function Home() {
               transform: "translate(-50%, -50%)",
               pointerEvents: "none",
             }}
-            className="text-2xl font-light text-gray-300 dark:text-gray-600"
+            className="text-6xl font-light text-gray-300 dark:text-gray-600"
           >
-            Click anywhere to create your first screen
+            Right-click to create your first screen
           </div>
         )}
         {screens.map((screen, index) => {

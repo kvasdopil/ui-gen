@@ -23,9 +23,10 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
 - 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
-- 📋 **Clone Screens**: Clone a screen at any point in its conversation history, creating a new screen with full history up to that point, ready to drag and continue from that state
+- 📋 **Clone Screens**: Clone a screen at any point in its conversation history, creating a new screen with full history up to that point (cloned screen is not auto-selected)
+- 📤 **Export to Clipboard**: Export any conversation point's HTML to clipboard with prompt history comment prefix - includes all prompts up to that point formatted as a comment block
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
-- ➕ **New Screen Creation**: Click anywhere on empty space to create a new screen at that location
+- ➕ **New Screen Creation**: Right-click on empty space to create a new screen at that location
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
 - 💾 **Persistent Storage**: All screens, conversations, generated content, and camera position/zoom are automatically saved to IndexedDB
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
@@ -65,7 +66,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want** screens to stretch horizontally to fill available space, **so that** I can see the whole design page without scrolling
 - **As a** user, **I want** the iframe height to adjust automatically based on content, **so that** tall designs are fully visible
 - **As a** user, **I want to** see the generated UI immediately after generation completes, **so that** I can review the result without delay
-- **As a** user, **I want to** see an empty state message when no screens exist, **so that** I know how to get started
+- **As a** user, **I want to** see an empty state message when no screens exist, **so that** I know how to get started (right-click to create)
 - **As a** user, **I want to** pan the viewport by dragging empty space, **so that** I can navigate around multiple screens
 - **As a** user, **I want to** zoom the viewport using scroll (10% to 100%), **so that** I can see screens at different scales
 - **As a** user, **I want to** click a screen to select it, **so that** I can interact with it and see its prompt panel
@@ -84,9 +85,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 ### User Interface
 
-- **As a** user, **I want to** click on empty space twice to create a new screen (first click deselects, second shows form), **so that** I can easily deselect screens without accidentally triggering the creation form
+- **As a** user, **I want to** right-click on empty space to create a new screen, **so that** I can create screens without interfering with left-click interactions (panning, selecting, etc.)
 - **As a** user, **I want to** see a floating form appear at the click location when creating a new screen, **so that** I can enter the prompt for the new screen
-- **As a** user, **I want to** have my input preserved if I cancel the new screen form, **so that** I don't lose my work if I click outside accidentally
+- **As a** user, **I want to** have my input preserved if I cancel the new screen form or modify prompt, **so that** I don't lose my work if I click outside accidentally
 - **As a** user, **I want** the new screen form to close when I select a screen, **so that** the form doesn't stay visible when I'm working with existing screens
 - **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
 - **As a** user, **I want to** see a prompt history panel appear when I select a screen, **so that** I can see my conversation history
@@ -103,6 +104,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** clone a screen at any point in its conversation history, **so that** I can branch off and explore different design directions from that state
 - **As a** user, **I want** cloned screens to include the full conversation history up to the cloned point, **so that** I have complete context for further modifications
 - **As a** user, **I want** cloned screens to be immediately ready to drag, **so that** I can quickly position them in my workspace
+- **As a** user, **I want to** export any conversation point's HTML to clipboard with its prompt history, **so that** I can easily copy and use the generated code in other projects
+- **As a** user, **I want** the exported HTML to include a comment block with all prompts used to generate it, **so that** I can track how the UI was created
+- **As a** user, **I want to** see a notification when HTML is successfully copied to clipboard, **so that** I know the export completed
 - **As a** user, **I want to** click a "Modify" button (ghost style that turns blue on hover) to enter modification mode, **so that** I can request changes to the current UI
 - **As a** user, **I want to** see a modification input field with a label "What you would like to change" when I click Modify, **so that** I can clearly understand what to enter
 - **As a** user, **I want** my modification prompts to appear in history immediately when I send them, **so that** I can see what I requested while the UI is being generated
@@ -152,6 +156,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **Icons**:
   - React Icons (FontAwesome) - Used in the application UI
   - Font Awesome 6.5.1 CDN - Used in generated UI mockups
+- **Notifications**:
+  - Custom toast notification system for user feedback
 - **Deployment**: Vercel
 
 ## Project Structure
@@ -295,24 +301,23 @@ yarn dev
 
 ### Initial Generation
 
-1. When the viewport is empty, click anywhere on the empty space
+1. When the viewport is empty, right-click anywhere on the empty space
 2. A small popup will appear with "Create screen" title and a "Mobile app" button
 3. Click the "Mobile app" button to open the prompt dialog
 4. Enter a description of the UI you want to generate
 5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
 6. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
 7. The generated UI will be displayed in a 390px × 844px screen container
-8. The screen will be created at the location where you clicked
+8. The screen will be created at the location where you right-clicked
 
 ### Creating New Screens
 
-1. **Deselect First**: If a screen is selected, click on empty space once to deselect it
-2. **Click Again to Create**: Click on empty space again (when no screen is selected) to show the initial popup
-3. **Select Type**: A small popup will appear at the click location with "Create screen" title and a "Mobile app" button
-4. **Enter Prompt**: Click the "Mobile app" button to open the "What you want to create" dialog, then enter your prompt
-5. **Create Screen**: Click the "Create" button - a new screen will be created at that location and start generating immediately
-6. **Cancel**: Click outside any popup/form or select any screen to cancel (your input will be preserved for the next attempt)
-7. **Positioning**: Each new screen is positioned absolutely at the location where you clicked, allowing you to organize screens spatially
+1. **Right-Click to Create**: Right-click on empty space to show the initial popup (left-click anywhere will dismiss the popup if it's open)
+2. **Select Type**: A small popup will appear at the right-click location with "Create screen" title and a "Mobile app" button
+3. **Enter Prompt**: Click the "Mobile app" button to open the "What you want to create" dialog, then enter your prompt
+4. **Create Screen**: Click the "Create" button - a new screen will be created at that location and start generating immediately
+5. **Cancel**: Left-click anywhere outside the popup/form or select any screen to cancel (your input will be preserved for the next attempt)
+6. **Positioning**: Each new screen is positioned absolutely at the location where you right-clicked, allowing you to organize screens spatially
 
 ### Navigating Multiple Screens
 
@@ -339,29 +344,35 @@ yarn dev
 1. Select a screen to see its prompt history panel
 2. Hover over any entry in the history to reveal a menu button (three dots) on the right
 3. Click the menu button to open a dropdown menu with available actions
-4. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
+4. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
+   - The exported HTML includes a comment block at the top with all prompts used to generate that version
+   - Prompt history is formatted as: `(prompt1)` separated by `--` between prompts
+   - A toast notification will appear confirming the copy: "Screen {screen name} is copied to clipboard"
+   - The HTML is ready to use in other projects
+5. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
    - The cloned screen will have a new unique ID
    - It will be positioned 50px offset from the original screen
-   - The cloned screen will be ready to drag immediately
+   - The cloned screen will not be auto-selected (you can click it to select it)
    - The cloned point will be selected in the new screen
-5. **Delete**: Click "Delete" on the last entry to remove it from history
+6. **Delete**: Click "Delete" on the last entry to remove it from history
    - A confirmation dialog will appear before deletion
    - If you delete the currently selected entry, the previous entry will be automatically selected
    - If you delete the last remaining entry, the entire screen will be removed
-6. All changes are saved immediately to persistent storage
+7. All changes are saved immediately to persistent storage
 
 ### Making Modifications
 
 1. Select a screen to see its prompt history panel on the right
 2. Click the "Modify" button (ghost style, turns blue on hover) at the bottom of the history
 3. Enter your modification request in the "What you would like to change" field
-4. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
-5. The new modification prompt will be added to the history immediately (before generation completes)
-6. A loading spinner will appear while the UI is being regenerated
-7. Once generation completes, the prompt will be updated with the generated HTML
-8. The newly created prompt will be automatically selected, showing its output
-9. You can continue making modifications iteratively - each modification builds on the full conversation history
-10. Each screen maintains its own independent conversation history
+4. **Text Preservation**: If you click outside or dismiss the modify form, your entered text will be preserved - click "Modify" again to continue editing
+5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
+6. The new modification prompt will be added to the history immediately (before generation completes)
+7. A loading spinner will appear while the UI is being regenerated
+8. Once generation completes, the prompt will be updated with the generated HTML
+9. The newly created prompt will be automatically selected, showing its output
+10. You can continue making modifications iteratively - each modification builds on the full conversation history
+11. Each screen maintains its own independent conversation history
 
 ### Creating Arrow Connections
 
@@ -469,13 +480,13 @@ The `/api/create` endpoint:
   - Handles zooming via mouse wheel (10% to 100%) with non-passive event listener
   - Manages multiple screen instances and their data with absolute positioning
   - Tracks selected screen ID
-  - **Empty State**: Displays "Click anywhere to create your first screen" message when no screens exist, positioned at 0,0 in viewport coordinates (centered on first load)
+  - **Empty State**: Displays "Right-click to create your first screen" message when no screens exist, positioned at 0,0 in viewport coordinates (centered on first load)
   - Centers viewport on first load when no screens exist and no saved transform
   - Handles screen dragging: unselected screens can be dragged to reposition them
   - Disables panning when dragging a screen to prevent interference
   - Deselects screens when clicking outside or starting to drag another screen
-  - Provides new screen creation flow: first click on empty space deselects current screen, second click (when no screen selected) shows form
-  - Preserves form input when canceling the new screen flow
+  - Provides new screen creation flow: right-click on empty space shows popup, left-click anywhere dismisses popup
+  - Preserves form input when canceling the new screen flow or modify prompt
   - Auto-loads screens and viewport transform from IndexedDB on mount
   - Auto-saves screens and viewport transform to IndexedDB whenever they change (screens debounced by 300ms, viewport transform debounced by 500ms)
   - Uses functional state updates in `handleScreenUpdate` to prevent race conditions when multiple screens update simultaneously
@@ -543,14 +554,18 @@ The `/api/create` endpoint:
   - Highlights the currently selected prompt with blue border and background
   - Allows clicking prompts to view their corresponding HTML outputs
   - Shows menu button (three dots) on hover for each entry
-  - Dropdown menu provides actions: Clone (all entries) and Delete (last entry only)
+  - Dropdown menu provides actions: Export to clipboard (all entries), Clone (all entries), and Delete (last entry only)
+  - Export to clipboard formats HTML with prompt history comment prefix showing all prompts up to that point
+  - Shows toast notification after successful clipboard copy
   - Delete option uses destructive styling (red) in the menu
   - Provides confirmation dialog before deleting entries
   - Provides "Modify" button to enter modification mode
   - Shows modification input field with "Create" button when in edit mode
+  - Preserves entered text when dismissing the modify form (text remains when clicking "Modify" again)
   - Handles canceling edit mode when input field loses focus and is empty
   - Only visible when parent screen is selected
   - All entries maintain consistent width (space reserved for menu button)
+  - All dropdown menu items have cursor pointer styling
 
 - Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
 
@@ -690,7 +705,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 ## Future Improvements
 
 - [ ] Support for multiple screen sizes
-- [ ] Export generated UI as image or HTML file
+- [x] Export generated UI to clipboard with prompt history
 - [x] Save/load generated UIs (IndexedDB persistence)
 - [x] View previous UI versions from history (clickable prompts)
 - [x] Multiple conversation branches/screens
