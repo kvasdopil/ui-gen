@@ -15,6 +15,11 @@ const CreateScreenPopup = forwardRef<HTMLDivElement, CreateScreenPopupProps>(
   ({ position, onSelect, onDismiss }, ref) => {
     // Handle click outside to dismiss
     useEffect(() => {
+      // Don't add listeners during SSR
+      if (typeof window === "undefined" || typeof document === "undefined") {
+        return;
+      }
+
       const handleClickOutside = (event: MouseEvent) => {
         if (
           typeof ref !== "function" &&

@@ -137,7 +137,10 @@ export default function Home() {
 
         // Check if mouse is over a screen (but not the start screen)
         // Use elementFromPoint to get the element at mouse position, as e.target might be a child
-        const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+        const elementAtPoint =
+          typeof document !== "undefined"
+            ? document.elementFromPoint(e.clientX, e.clientY)
+            : null;
         const screenContainer = elementAtPoint?.closest(
           "[data-screen-container]",
         ) as HTMLElement | null;
@@ -243,7 +246,7 @@ export default function Home() {
       let endScreenId = hoveredScreenIdRef.current;
 
       // Double-check by looking at the element at mouse position if event is available
-      if (e && !endScreenId) {
+      if (e && !endScreenId && typeof document !== "undefined") {
         const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
         const screenContainer = elementAtPoint?.closest(
           "[data-screen-container]",
@@ -432,6 +435,10 @@ export default function Home() {
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
     (screenId: string) => {
+      // Don't run during SSR
+      if (typeof window === "undefined" || typeof document === "undefined") {
+        return;
+      }
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
         const screenElement = document.getElementById(screenId);

@@ -33,13 +33,12 @@ export function toast(message: string) {
 
 export function Toaster() {
   const [currentToasts, setCurrentToasts] = useState<Toast[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-    return toasts;
+    // Initialize with current toasts if available
+    return typeof window !== "undefined" ? toasts : [];
   });
 
   useEffect(() => {
+    // Subscribe to toast updates
     toastListeners.push(setCurrentToasts);
 
     return () => {
@@ -49,6 +48,11 @@ export function Toaster() {
       }
     };
   }, []);
+
+  // Don't render during SSR - check document directly
+  if (typeof document === "undefined") {
+    return null;
+  }
 
   return createPortal(
     <div className="fixed top-4 left-1/2 z-[10000] -translate-x-1/2 space-y-2">
