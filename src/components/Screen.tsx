@@ -713,6 +713,7 @@ export default function Screen({
             onDeletePoint={handleDeletePoint}
             onClone={(pointIndex) => onClone(id, pointIndex)}
             screenName={screenTitle}
+            screenId={id}
             getHtmlForPoint={(pointIndex) => {
               if (pointIndex >= 0 && pointIndex < conversationPoints.length) {
                 return conversationPoints[pointIndex].html || "";

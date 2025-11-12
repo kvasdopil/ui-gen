@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ConversationPoint } from "@/lib/types";
 
 interface PromptPanelProps {
@@ -33,6 +34,7 @@ interface PromptPanelProps {
   onDeletePoint: (pointIndex: number) => void;
   onClone: (pointIndex: number) => void;
   screenName: string | null;
+  screenId: string;
   getHtmlForPoint: (pointIndex: number) => string;
 }
 
@@ -45,10 +47,15 @@ export default function PromptPanel({
   onDeletePoint,
   onClone,
   screenName,
+  screenId,
   getHtmlForPoint,
 }: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState("");
+  const [editValue, setEditValue] = usePersistentState<string>(
+    `promptEdit-${screenId}`,
+    "",
+    300,
+  );
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null);
 
   const handleModify = () => {

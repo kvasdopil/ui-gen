@@ -1,16 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { FaMagic } from "react-icons/fa";
 import { useSession } from "next-auth/react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
+import NewScreenDialog from "@/components/NewScreenDialog";
 import ArrowLine from "@/components/ArrowLine";
+import Viewport, { type ViewportHandle } from "@/components/Viewport";
+import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ScreenData, ConversationPointArrow } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
@@ -23,30 +21,27 @@ const snapToGrid = (value: number): number => {
 };
 
 export default function Home() {
-  const { data: session, status } = useSession();
+  useSession(); // Keep for auth initialization
   const [screens, setScreens] = useState<ScreenData[]>([]);
   const [isLoadingScreens, setIsLoadingScreens] = useState(true);
-  const [isLoadingViewport, setIsLoadingViewport] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
-  const [viewportTransform, setViewportTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const viewportTransformRef = useRef({ x: 0, y: 0, scale: 1 });
-  const viewportSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const screensSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [draggedScreenId, setDraggedScreenId] = useState<string | null>(null);
   const [screenDragStart, setScreenDragStart] = useState({ x: 0, y: 0, screenX: 0, screenY: 0 });
   const [isDraggingScreen, setIsDraggingScreen] = useState(false);
   const justFinishedDraggingRef = useRef<string | null>(null);
   const [isCreateScreenPopupMode, setIsCreateScreenPopupMode] = useState(false);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
-  const [newScreenInput, setNewScreenInput] = useState("");
+  const [newScreenInput, setNewScreenInput] = usePersistentState<string>(
+    "newScreenInput",
+    "",
+    300,
+  );
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
   const createScreenPopupRef = useRef<HTMLDivElement>(null);
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const pendingPromptProcessedRef = useRef(false);
+  const viewportHandleRef = useRef<ViewportHandle>(null);
   const [arrowLine, setArrowLine] = useState<{
     start: { x: number; y: number };
     end: { x: number; y: number };
@@ -55,7 +50,7 @@ export default function Home() {
   } | null>(null);
   const hoveredScreenIdRef = useRef<string | null>(null);
 
-  // Handle panning - only when clicking on empty space
+  // Handle screen dragging and selection
   const handleMouseDown = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
 
@@ -69,9 +64,12 @@ export default function Home() {
       return;
     }
 
-    // Hide popup on any left click (unless clicking on popup/form itself)
+    // Hide popup and dialog on any left click (unless clicking on popup/form itself)
     if (isCreateScreenPopupMode) {
       setIsCreateScreenPopupMode(false);
+    }
+    if (isNewScreenMode) {
+      setIsNewScreenMode(false);
     }
 
     // Check if clicking on a screen container
@@ -88,8 +86,8 @@ export default function Home() {
         setSelectedScreenId(null);
 
         // Set up potential screen drag (but don't mark as dragging yet)
-        const rect = viewportRef.current?.getBoundingClientRect();
-        if (rect && screen.position) {
+        const viewportElement = viewportHandleRef.current?.getElement();
+        if (viewportElement && screen.position) {
           // Store initial mouse position and screen position
           setScreenDragStart({
             x: e.clientX,
@@ -108,18 +106,20 @@ export default function Home() {
     }
 
     // Check if clicking within viewport but not on a screen
-    const isWithinViewport = viewportRef.current?.contains(target);
+    const viewportElement = viewportHandleRef.current?.getElement();
+    const isWithinViewport = viewportElement?.contains(target);
     const isEmptySpace = isWithinViewport && !screenContainer;
 
     if (isEmptySpace) {
       // Unselect screen when clicking on empty space
       setSelectedScreenId(null);
-
-      // Set drag start position for potential dragging
-      setDragStart({
-        x: e.clientX - viewportTransform.x,
-        y: e.clientY - viewportTransform.y,
-      });
+      // Dismiss popup and dialog when clicking on empty space
+      if (isCreateScreenPopupMode) {
+        setIsCreateScreenPopupMode(false);
+      }
+      if (isNewScreenMode) {
+        setIsNewScreenMode(false);
+      }
       setIsMouseDown(true);
     }
   };
@@ -130,7 +130,8 @@ export default function Home() {
 
     // Handle arrow line drawing
     if (arrowLine) {
-      const rect = viewportRef.current?.getBoundingClientRect();
+      const viewportElement = viewportHandleRef.current?.getElement();
+      const rect = viewportElement?.getBoundingClientRect();
       if (rect) {
         const endX = e.clientX - rect.left;
         const endY = e.clientY - rect.top;
@@ -179,51 +180,25 @@ export default function Home() {
 
         // Only update position if we're actually dragging
         if (isDraggingScreen) {
-          // Convert delta to content coordinates (accounting for scale)
-          const contentDeltaX = deltaX / viewportTransform.scale;
-          const contentDeltaY = deltaY / viewportTransform.scale;
+          // Get current transform from viewport
+          const transform = viewportHandleRef.current?.getTransform();
+          if (transform) {
+            // Convert delta to content coordinates (accounting for scale)
+            const contentDeltaX = deltaX / transform.scale;
+            const contentDeltaY = deltaY / transform.scale;
 
-          // Calculate new screen position and snap to grid
-          const newX = snapToGrid(screenDragStart.screenX + contentDeltaX);
-          const newY = snapToGrid(screenDragStart.screenY + contentDeltaY);
+            // Calculate new screen position and snap to grid
+            const newX = snapToGrid(screenDragStart.screenX + contentDeltaX);
+            const newY = snapToGrid(screenDragStart.screenY + contentDeltaY);
 
-          // Update screen position
-          handleScreenUpdate(draggedScreenId, {
-            position: { x: newX, y: newY },
-          });
+            // Update screen position
+            handleScreenUpdate(draggedScreenId, {
+              position: { x: newX, y: newY },
+            });
+          }
         }
       }
-      // Prevent panning as soon as we have a draggedScreenId (even before 5px threshold)
-      // This prevents viewport panning from interfering with screen drag
       return; // Don't handle panning when potentially dragging a screen
-    }
-
-    // Handle viewport panning (only if not dragging a screen)
-    // Check if user started dragging (mouse moved significantly from initial click)
-    const deltaX = Math.abs(e.clientX - (dragStart.x + viewportTransform.x));
-    const deltaY = Math.abs(e.clientY - (dragStart.y + viewportTransform.y));
-
-    if (!isDragging && (deltaX > 5 || deltaY > 5)) {
-      // User started dragging - cancel new screen mode if active
-      if (isNewScreenMode) {
-        setIsNewScreenMode(false);
-      }
-      // Cancel create screen popup if active
-      if (isCreateScreenPopupMode) {
-        setIsCreateScreenPopupMode(false);
-      }
-      setIsDragging(true);
-    }
-
-    if (isDragging) {
-      const currentTransform = viewportTransformRef.current;
-      const newTransform = {
-        ...currentTransform,
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      };
-      viewportTransformRef.current = newTransform;
-      setViewportTransform(newTransform);
     }
   };
 
@@ -232,7 +207,6 @@ export default function Home() {
     if (e) {
       const target = e.target as HTMLElement;
       if (newScreenFormRef.current?.contains(target)) {
-        setIsDragging(false);
         setIsMouseDown(false);
         setDraggedScreenId(null);
         setArrowLine(null);
@@ -285,9 +259,11 @@ export default function Home() {
             );
 
             // Convert start point from viewport coordinates to content coordinates relative to start screen center
-            // Viewport to content: (viewport - transform) / scale
-            const startContentX = (arrowLine.start.x - viewportTransform.x) / viewportTransform.scale;
-            const startContentY = (arrowLine.start.y - viewportTransform.y) / viewportTransform.scale;
+            const viewportToContent = viewportHandleRef.current?.viewportToContent;
+            if (!viewportToContent) return;
+            const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
+            const startContentX = startContent.x;
+            const startContentY = startContent.y;
             // Relative to screen center
             const startRelativeX = startScreen.position
               ? startContentX - startScreen.position.x
@@ -345,7 +321,6 @@ export default function Home() {
     }
 
     // Reset drag and click tracking
-    setIsDragging(false);
     setIsMouseDown(false);
     setIsDraggingScreen(false);
     setDraggedScreenId(null);
@@ -373,9 +348,10 @@ export default function Home() {
     // Only show menu on empty space (not on screens)
     if (!screenContainer) {
       // Check if clicking within viewport
-      const isWithinViewport = viewportRef.current?.contains(target);
+      const viewportElement = viewportHandleRef.current?.getElement();
+      const isWithinViewport = viewportElement?.contains(target);
       if (isWithinViewport) {
-        const rect = viewportRef.current?.getBoundingClientRect();
+        const rect = viewportElement?.getBoundingClientRect();
         if (rect) {
           const position = {
             x: e.clientX - rect.left,
@@ -393,44 +369,6 @@ export default function Home() {
     }
   };
 
-  // Handle zooming with scroll (10% to 100%)
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY * -0.001;
-    const currentTransform = viewportTransformRef.current;
-    const newScale = Math.min(Math.max(0.1, currentTransform.scale + delta), 1);
-
-    // Zoom towards mouse position
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (rect) {
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const scaleChange = newScale / currentTransform.scale;
-      const newTransform = {
-        x: mouseX - (mouseX - currentTransform.x) * scaleChange,
-        y: mouseY - (mouseY - currentTransform.y) * scaleChange,
-        scale: newScale,
-      };
-
-      // Update ref immediately for next event
-      viewportTransformRef.current = newTransform;
-      // Update state for rendering
-      setViewportTransform(newTransform);
-    }
-  }, []);
-
-  // Add wheel event listener with passive: false to allow preventDefault
-  useEffect(() => {
-    const element = viewportRef.current;
-    if (!element) return;
-
-    element.addEventListener("wheel", handleWheel, { passive: false });
-
-    return () => {
-      element.removeEventListener("wheel", handleWheel);
-    };
-  }, [handleWheel]);
 
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
@@ -442,8 +380,9 @@ export default function Home() {
       // Use requestAnimationFrame to ensure DOM is updated
       requestAnimationFrame(() => {
         const screenElement = document.getElementById(screenId);
-        if (screenElement && viewportRef.current) {
-          const viewportRect = viewportRef.current.getBoundingClientRect();
+        const viewportElement = viewportHandleRef.current?.getElement();
+        if (screenElement && viewportElement) {
+          const viewportRect = viewportElement.getBoundingClientRect();
 
           // Find the screen data to get its position in content coordinates
           const screen = screens.find((s) => s.id === screenId);
@@ -459,8 +398,10 @@ export default function Home() {
             // Fallback: get position from DOM (for initial screen or screens without position)
             const screenRect = screenElement.getBoundingClientRect();
 
-            // Get current transform from ref
-            const currentTransform = viewportTransformRef.current;
+            // Get current transform from viewport
+            const currentTransform = viewportHandleRef.current?.getTransform();
+            if (!currentTransform) return;
+
             // Convert from viewport coordinates to content coordinates
             // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
             const screenCenterXViewport =
@@ -487,8 +428,7 @@ export default function Home() {
               y: newY,
               scale: 1,
             };
-            viewportTransformRef.current = newTransform;
-            setViewportTransform(newTransform);
+            viewportHandleRef.current?.setTransform(newTransform);
             return; // Early return for fallback case
           }
 
@@ -509,8 +449,7 @@ export default function Home() {
             y: newY,
             scale: 1,
           };
-          viewportTransformRef.current = newTransform;
-          setViewportTransform(newTransform);
+          viewportHandleRef.current?.setTransform(newTransform);
         }
       });
     },
@@ -540,9 +479,11 @@ export default function Home() {
     if (!newScreenInput.trim()) return;
 
     // Convert form position (viewport coordinates) to viewport-content coordinates
-    // Account for the transform: translate(x, y) scale(scale)
-    const contentX = (newScreenPosition.x - viewportTransform.x) / viewportTransform.scale;
-    const contentY = (newScreenPosition.y - viewportTransform.y) / viewportTransform.scale;
+    const viewportToContent = viewportHandleRef.current?.viewportToContent;
+    if (!viewportToContent) return;
+    const contentPos = viewportToContent(newScreenPosition.x, newScreenPosition.y);
+    const contentX = contentPos.x;
+    const contentY = contentPos.y;
 
     // Create initial conversation point with the user prompt (HTML will be added after generation)
     const initialConversationPoint = {
@@ -572,7 +513,7 @@ export default function Home() {
 
     // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
     // centerAndZoomScreen(newScreen.id);
-  }, [newScreenInput, newScreenPosition, viewportTransform]);
+  }, [newScreenInput, newScreenPosition, setNewScreenInput]);
 
   // Handle screen update
   const handleScreenUpdate = useCallback((screenId: string, updates: Partial<ScreenData>) => {
@@ -664,7 +605,8 @@ export default function Home() {
   // Handle overlay click - start arrow from center of clicked overlay
   const handleOverlayClick = useCallback(
     (center: { x: number; y: number }, screenId: string, overlayIndex: number) => {
-      const rect = viewportRef.current?.getBoundingClientRect();
+      const viewportElement = viewportHandleRef.current?.getElement();
+      const rect = viewportElement?.getBoundingClientRect();
       if (rect) {
         const startScreen = screens.find((s) => s.id === screenId);
         if (startScreen) {
@@ -722,7 +664,7 @@ export default function Home() {
   //   }
   // }, [selectedScreenId, centerAndZoomScreen]);
 
-  // Load screens and viewport transform from storage on mount
+  // Load screens from storage on mount
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -731,33 +673,10 @@ export default function Home() {
         if (loadedScreens.length > 0) {
           setScreens(loadedScreens);
         }
-
-        // Load viewport transform
-        const loadedTransform = await storage.loadViewportTransform();
-        if (loadedTransform) {
-          viewportTransformRef.current = loadedTransform;
-          setViewportTransform(loadedTransform);
-        } else if (loadedScreens.length === 0) {
-          // Center viewport when there are no screens and no saved transform (first time)
-          // Center at 0,0 in content coordinates means viewport should be at center of screen
-          requestAnimationFrame(() => {
-            if (viewportRef.current) {
-              const rect = viewportRef.current.getBoundingClientRect();
-              const initialTransform = {
-                x: rect.width / 2,
-                y: rect.height / 2,
-                scale: 1,
-              };
-              viewportTransformRef.current = initialTransform;
-              setViewportTransform(initialTransform);
-            }
-          });
-        }
       } catch (error) {
         console.error("Error loading data:", error);
       } finally {
         setIsLoadingScreens(false);
-        setIsLoadingViewport(false);
       }
     };
 
@@ -788,164 +707,57 @@ export default function Home() {
     };
   }, [screens, isLoadingScreens]);
 
-  // Keep ref in sync with state (safety measure)
-  useEffect(() => {
-    viewportTransformRef.current = viewportTransform;
-  }, [viewportTransform]);
 
-  // Save viewport transform to storage whenever it changes (debounced)
-  useEffect(() => {
-    if (!isLoadingViewport) {
-      // Clear existing timeout
-      if (viewportSaveTimeoutRef.current) {
-        clearTimeout(viewportSaveTimeoutRef.current);
-      }
-
-      // Debounce save by 500ms to avoid too many writes
-      viewportSaveTimeoutRef.current = setTimeout(() => {
-        storage.saveViewportTransform(viewportTransform).catch((error) => {
-          console.error("Error saving viewport transform:", error);
-        });
-      }, 500);
-    }
-
-    // Cleanup timeout on unmount
-    return () => {
-      if (viewportSaveTimeoutRef.current) {
-        clearTimeout(viewportSaveTimeoutRef.current);
-      }
-    };
-  }, [viewportTransform, isLoadingViewport]);
-
-  // Reset pending prompt processed flag when session changes
-  useEffect(() => {
-    pendingPromptProcessedRef.current = false;
-  }, [session?.user?.id]);
-
-  // Check for pending prompts after auth completes
-  useEffect(() => {
-    const restorePendingPrompt = async () => {
-      // Only process once per session change
-      if (pendingPromptProcessedRef.current) return;
-
-      // Wait for auth to complete and screens to load
-      if (status === "loading" || isLoadingScreens) return;
-
-      // Only process if authenticated
-      if (!session) return;
-
-      pendingPromptProcessedRef.current = true;
-
-      try {
-        const pending = await storage.loadPendingPrompt();
-        if (!pending) return;
-
-        // Clear the pending prompt immediately to prevent reprocessing
-        await storage.clearPendingPrompt();
-
-        if (pending.screenId) {
-          // Screen already exists (either new or existing) - find it and select it
-          // The Screen component will auto-retry generation if there's an incomplete point
-          const screen = screens.find((s) => s.id === pending.screenId);
-          if (screen) {
-            setSelectedScreenId(pending.screenId);
-          }
-        }
-      } catch (error) {
-        console.error("Error restoring pending prompt:", error);
-        pendingPromptProcessedRef.current = false; // Allow retry on error
-      }
-    };
-
-    restorePendingPrompt();
-  }, [session, status, isLoadingScreens, screens, viewportTransform]);
 
   return (
-    <div
-      ref={viewportRef}
-      className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-sky-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-950 dark:to-neutral-900"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onContextMenu={handleContextMenu}
-      style={{ cursor: isDraggingScreen ? "grabbing" : isDragging ? "grabbing" : "grab" }}
-    >
+    <>
       <UserAvatar />
-      <div
-        className="viewport-content relative"
-        style={{
-          transform: `translate(${viewportTransform.x}px, ${viewportTransform.y}px) scale(${viewportTransform.scale})`,
-          transformOrigin: "0 0",
+      <Viewport
+        ref={viewportHandleRef}
+        disabled={!!draggedScreenId}
+        onPanStart={() => {
+          // Cancel new screen mode if active when panning starts
+          if (isNewScreenMode) {
+            setIsNewScreenMode(false);
+          }
+          if (isCreateScreenPopupMode) {
+            setIsCreateScreenPopupMode(false);
+          }
         }}
       >
-        {/* Arrow line overlay - rendered in content coordinates */}
-        {arrowLine &&
-          (() => {
-            const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
-            const endScreenId = hoveredScreenIdRef.current;
-            const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
+        <div
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onContextMenu={handleContextMenu}
+          style={{ cursor: isDraggingScreen ? "grabbing" : "default" }}
+        >
+          {/* Arrow line overlay - rendered in content coordinates */}
+          {arrowLine &&
+            (() => {
+              const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+              const endScreenId = hoveredScreenIdRef.current;
+              const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
 
-            // Convert from viewport coordinates to content coordinates
-            const startContentX =
-              (arrowLine.start.x - viewportTransform.x) / viewportTransform.scale;
-            const startContentY =
-              (arrowLine.start.y - viewportTransform.y) / viewportTransform.scale;
-            const endContentX = (arrowLine.end.x - viewportTransform.x) / viewportTransform.scale;
-            const endContentY = (arrowLine.end.y - viewportTransform.y) / viewportTransform.scale;
+              // Convert from viewport coordinates to content coordinates
+              const viewportToContent = viewportHandleRef.current?.viewportToContent;
+              if (!viewportToContent) return null;
+              const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
+              const endContent = viewportToContent(arrowLine.end.x, arrowLine.end.y);
+              const startContentX = startContent.x;
+              const startContentY = startContent.y;
+              const endContentX = endContent.x;
+              const endContentY = endContent.y;
 
-            const startScreenBounds = startScreen?.position
-              ? {
-                x: startScreen.position.x,
-                y: startScreen.position.y,
-                width: 390,
-                height: startScreen.height || 844,
-              }
-              : undefined;
-            const endScreenBounds = endScreen?.position
-              ? {
-                x: endScreen.position.x,
-                y: endScreen.position.y,
-                width: 390,
-                height: endScreen.height || 844,
-              }
-              : undefined;
-            return (
-              <ArrowLine
-                start={{ x: startContentX, y: startContentY }}
-                end={{ x: endContentX, y: endContentY }}
-                startScreenBounds={startScreenBounds}
-                endScreenBounds={endScreenBounds}
-              />
-            );
-          })()}
-        {/* Render all stored arrows from conversation points */}
-        {screens.flatMap((screen) => {
-          if (!screen.position) return [];
-
-          return screen.conversationPoints.flatMap((conversationPoint, conversationPointIndex) => {
-            const arrows = conversationPoint.arrows || [];
-            return arrows.map((arrow, arrowIndex) => {
-              const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
-
-              // Calculate start point: use stored startPoint if available, otherwise use screen center
-              const startContentX = arrow.startPoint
-                ? screen.position!.x + arrow.startPoint.x
-                : screen.position!.x;
-              const startContentY = arrow.startPoint
-                ? screen.position!.y + arrow.startPoint.y
-                : screen.position!.y;
-
-              // End point is target screen center
-              const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
-              const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
-
-              const startScreenBounds = {
-                x: screen.position!.x,
-                y: screen.position!.y,
-                width: 390,
-                height: screen.height || 844,
-              };
+              const startScreenBounds = startScreen?.position
+                ? {
+                  x: startScreen.position.x,
+                  y: startScreen.position.y,
+                  width: 390,
+                  height: startScreen.height || 844,
+                }
+                : undefined;
               const endScreenBounds = endScreen?.position
                 ? {
                   x: endScreen.position.x,
@@ -954,122 +766,142 @@ export default function Home() {
                   height: endScreen.height || 844,
                 }
                 : undefined;
-
               return (
                 <ArrowLine
-                  key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
                   start={{ x: startContentX, y: startContentY }}
                   end={{ x: endContentX, y: endContentY }}
                   startScreenBounds={startScreenBounds}
                   endScreenBounds={endScreenBounds}
                 />
               );
-            });
-          });
-        })}
-        {!isLoadingScreens && screens.length === 0 && (
-          <div
-            style={{
-              position: "absolute",
-              left: "0px",
-              top: "0px",
-              transform: "translate(-50%, -50%)",
-              pointerEvents: "none",
-            }}
-            className="text-6xl font-light text-gray-300 dark:text-gray-600"
-          >
-            Right-click to create your first screen
-          </div>
-        )}
-        {screens.map((screen, index) => {
-          // Selected screens appear on top, then newer screens
-          const zIndex = selectedScreenId === screen.id ? screens.length + 1000 : index + 1;
+            })()}
+          {/* Render all stored arrows from conversation points */}
+          {screens.flatMap((screen) => {
+            if (!screen.position) return [];
 
-          return (
+            return screen.conversationPoints.flatMap((conversationPoint, conversationPointIndex) => {
+              const arrows = conversationPoint.arrows || [];
+              return arrows.map((arrow, arrowIndex) => {
+                const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+
+                // Calculate start point: use stored startPoint if available, otherwise use screen center
+                const startContentX = arrow.startPoint
+                  ? screen.position!.x + arrow.startPoint.x
+                  : screen.position!.x;
+                const startContentY = arrow.startPoint
+                  ? screen.position!.y + arrow.startPoint.y
+                  : screen.position!.y;
+
+                // End point is target screen center
+                const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
+                const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
+
+                const startScreenBounds = {
+                  x: screen.position!.x,
+                  y: screen.position!.y,
+                  width: 390,
+                  height: screen.height || 844,
+                };
+                const endScreenBounds = endScreen?.position
+                  ? {
+                    x: endScreen.position.x,
+                    y: endScreen.position.y,
+                    width: 390,
+                    height: endScreen.height || 844,
+                  }
+                  : undefined;
+
+                return (
+                  <ArrowLine
+                    key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
+                    start={{ x: startContentX, y: startContentY }}
+                    end={{ x: endContentX, y: endContentY }}
+                    startScreenBounds={startScreenBounds}
+                    endScreenBounds={endScreenBounds}
+                  />
+                );
+              });
+            });
+          })}
+          {!isLoadingScreens && screens.length === 0 && (
             <div
-              key={screen.id}
-              id={screen.id}
-              data-screen-container
               style={{
                 position: "absolute",
-                left: screen.position ? `${screen.position.x}px` : "0px",
-                top: screen.position ? `${screen.position.y}px` : "0px",
+                left: "0px",
+                top: "0px",
                 transform: "translate(-50%, -50%)",
-                zIndex,
-                cursor:
-                  screen.id === selectedScreenId
-                    ? "default"
-                    : isDraggingScreen && draggedScreenId === screen.id
-                      ? "grabbing"
-                      : "grab",
+                pointerEvents: "none",
               }}
+              className="text-6xl font-light text-gray-300 dark:text-gray-600"
             >
-              <Screen
-                id={screen.id}
-                isSelected={selectedScreenId === screen.id}
-                onScreenClick={handleScreenClick}
-                onCreate={handleScreenCreate}
-                onUpdate={handleScreenUpdate}
-                onDelete={handleScreenDelete}
-                onClone={handleScreenClone}
-                onOverlayClick={handleOverlayClick}
-                screenData={screen}
-                onCenterAndZoom={centerAndZoomScreen}
-              />
+              Right-click to create your first screen
             </div>
-          );
-        })}
-      </div>
+          )}
+          {screens.map((screen, index) => {
+            // Selected screens appear on top, then newer screens
+            const zIndex = selectedScreenId === screen.id ? screens.length + 1000 : index + 1;
 
-      {/* Create Screen Popup - initial popup with Mobile app button */}
-      {isCreateScreenPopupMode && (
-        <CreateScreenPopup
-          ref={createScreenPopupRef}
-          position={newScreenPosition}
-          onSelect={() => {
-            setIsCreateScreenPopupMode(false);
-            setIsNewScreenMode(true);
-          }}
-          onDismiss={() => setIsCreateScreenPopupMode(false)}
-        />
-      )}
-
-      {/* New Screen Form - positioned absolutely in viewport coordinates */}
-      {isNewScreenMode && (
-        <div
-          ref={newScreenFormRef}
-          className="fixed z-50"
-          style={{
-            left: `${newScreenPosition.x}px`,
-            top: `${newScreenPosition.y}px`,
-            transform: "translate(-50%, -50%)",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Card className="flex w-80 flex-col gap-3 p-4">
-            <Label htmlFor="new-screen-textarea" className="text-sm">
-              What you want to create
-            </Label>
-            <Textarea
-              id="new-screen-textarea"
-              value={newScreenInput}
-              onChange={(e) => setNewScreenInput(e.target.value)}
-              placeholder="Describe the UI you want..."
-              rows={6}
-              className="text-sm"
-              autoFocus
-            />
-            <Button
-              onClick={handleCreateNewScreen}
-              disabled={!newScreenInput.trim()}
-              className="flex items-center justify-center gap-2 text-sm"
-            >
-              <FaMagic />
-              <span>Create</span>
-            </Button>
-          </Card>
+            return (
+              <div
+                key={screen.id}
+                id={screen.id}
+                data-screen-container
+                style={{
+                  position: "absolute",
+                  left: screen.position ? `${screen.position.x}px` : "0px",
+                  top: screen.position ? `${screen.position.y}px` : "0px",
+                  transform: "translate(-50%, -50%)",
+                  zIndex,
+                  cursor:
+                    screen.id === selectedScreenId
+                      ? "default"
+                      : isDraggingScreen && draggedScreenId === screen.id
+                        ? "grabbing"
+                        : "grab",
+                }}
+              >
+                <Screen
+                  id={screen.id}
+                  isSelected={selectedScreenId === screen.id}
+                  onScreenClick={handleScreenClick}
+                  onCreate={handleScreenCreate}
+                  onUpdate={handleScreenUpdate}
+                  onDelete={handleScreenDelete}
+                  onClone={handleScreenClone}
+                  onOverlayClick={handleOverlayClick}
+                  screenData={screen}
+                  onCenterAndZoom={centerAndZoomScreen}
+                />
+              </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+
+        {/* Create Screen Popup - initial popup with Mobile app button */}
+        {isCreateScreenPopupMode && (
+          <CreateScreenPopup
+            ref={createScreenPopupRef}
+            position={newScreenPosition}
+            onSelect={() => {
+              setIsCreateScreenPopupMode(false);
+              setIsNewScreenMode(true);
+            }}
+            onDismiss={() => setIsCreateScreenPopupMode(false)}
+          />
+        )}
+
+        {/* New Screen Dialog */}
+        {isNewScreenMode && (
+          <NewScreenDialog
+            ref={newScreenFormRef}
+            position={newScreenPosition}
+            value={newScreenInput}
+            onChange={setNewScreenInput}
+            onSubmit={handleCreateNewScreen}
+            onDismiss={() => setIsNewScreenMode(false)}
+          />
+        )}
+      </Viewport>
+    </>
   );
 }
