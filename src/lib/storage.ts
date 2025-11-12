@@ -1,5 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import type { ScreenData } from "./types";
+import { getYjsProvider, screenDataToYjs, yjsToScreenData } from "./yjs-provider";
+import * as Y from "yjs";
 
 export type ViewportTransform = {
   x: number;
@@ -164,5 +166,173 @@ class IdbStorage implements Storage {
   }
 }
 
+// Yjs-integrated storage that syncs screens via Yjs while keeping IndexedDB for offline support
+class YjsStorage implements Storage {
+  public idbStorage: IdbStorage;
+  private projectId: string;
+  private userId?: string;
+  private sseUrl?: string;
+  private yjsProvider: ReturnType<typeof getYjsProvider> | null = null;
+  private screensMap: Y.Map<Y.Map<unknown>> | null = null;
+  private isInitialized = false;
+  private initializationPromise: Promise<void> | null = null;
+
+  constructor(projectId: string = "default", userId?: string, sseUrl?: string) {
+    this.idbStorage = new IdbStorage();
+    this.projectId = projectId;
+    this.userId = userId;
+    this.sseUrl = sseUrl;
+  }
+
+  private async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    if (this.initializationPromise) return this.initializationPromise;
+
+    this.initializationPromise = (async () => {
+      // Initialize Yjs provider
+      this.yjsProvider = getYjsProvider({
+        projectId: this.projectId,
+        userId: this.userId,
+        sseUrl: this.sseUrl,
+      });
+
+      this.screensMap = this.yjsProvider.getScreensMap();
+
+      // Load initial screens from IndexedDB and sync to Yjs
+      const idbScreens = await this.idbStorage.loadScreens();
+      if (idbScreens.length > 0 && this.screensMap && this.screensMap.doc) {
+        // Sync IndexedDB screens to Yjs (only on first load)
+        // Use "indexeddb" origin to prevent sending these updates to server
+        this.screensMap.doc.transact(() => {
+          idbScreens.forEach((screen) => {
+            const yScreen = screenDataToYjs(screen);
+            this.screensMap!.set(screen.id, yScreen);
+          });
+        }, "indexeddb");
+      }
+
+      this.isInitialized = true;
+    })();
+
+    return this.initializationPromise;
+  }
+
+  async saveScreens(screens: ScreenData[]): Promise<void> {
+    await this.initialize();
+
+    // Save to IndexedDB for offline support
+    await this.idbStorage.saveScreens(screens);
+
+    // Sync to Yjs (only completed screens with HTML)
+    // Note: This is called from the save effect, which should not trigger server updates
+    // The actual user actions are handled in page.tsx with "user-action" origin
+    if (this.screensMap && this.screensMap.doc) {
+      this.screensMap.doc.transact(() => {
+        screens.forEach((screen) => {
+          // Only sync screens that have at least one completed conversation point
+          const hasCompletedPoints = screen.conversationPoints.some((point) => point.html && point.html.trim().length > 0);
+          if (hasCompletedPoints) {
+            const yScreen = screenDataToYjs(screen);
+            this.screensMap!.set(screen.id, yScreen);
+          } else {
+            // Remove incomplete screens from Yjs
+            this.screensMap!.delete(screen.id);
+          }
+        });
+      }, "indexeddb");
+    }
+  }
+
+  async loadScreens(): Promise<ScreenData[]> {
+    await this.initialize();
+
+    // Try to load from Yjs first (if available and has data)
+    if (this.screensMap && this.screensMap.size > 0) {
+      const screens: ScreenData[] = [];
+      this.screensMap.forEach((yScreen: Y.Map<unknown>) => {
+        try {
+          const screenData = yjsToScreenData(yScreen);
+          // Add selectedPromptIndex if missing (client-side state)
+          const fullScreenData: ScreenData = {
+            ...screenData,
+            selectedPromptIndex: screenData.selectedPromptIndex ?? null,
+          };
+          screens.push(fullScreenData);
+        } catch (error: unknown) {
+          console.error("Error converting Yjs screen to ScreenData:", error);
+        }
+      });
+      if (screens.length > 0) {
+        // Also save to IndexedDB for offline support
+        await this.idbStorage.saveScreens(screens);
+        return screens;
+      }
+    }
+
+    // Fallback to IndexedDB
+    return this.idbStorage.loadScreens();
+  }
+
+  async clearScreens(): Promise<void> {
+    await this.initialize();
+    await this.idbStorage.clearScreens();
+    if (this.screensMap && this.screensMap.doc) {
+      this.screensMap.doc.transact(() => {
+        this.screensMap!.forEach((_, screenId) => {
+          this.screensMap!.delete(screenId);
+        });
+      }, "user-action");
+    }
+  }
+
+  // Viewport transform is NOT synced via Yjs (client-side only)
+  async saveViewportTransform(transform: ViewportTransform): Promise<void> {
+    return this.idbStorage.saveViewportTransform(transform);
+  }
+
+  async loadViewportTransform(): Promise<ViewportTransform | null> {
+    return this.idbStorage.loadViewportTransform();
+  }
+
+  // Pending prompts are NOT synced via Yjs (client-side only)
+  async savePendingPrompt(
+    prompt: string,
+    screenId: string | null,
+    position: { x: number; y: number } | null,
+  ): Promise<void> {
+    return this.idbStorage.savePendingPrompt(prompt, screenId, position);
+  }
+
+  async loadPendingPrompt(): Promise<{
+    prompt: string;
+    screenId: string | null;
+    position: { x: number; y: number } | null;
+  } | null> {
+    return this.idbStorage.loadPendingPrompt();
+  }
+
+  async clearPendingPrompt(): Promise<void> {
+    return this.idbStorage.clearPendingPrompt();
+  }
+
+  // Get Yjs provider for subscribing to changes
+  getYjsProvider() {
+    return this.yjsProvider;
+  }
+
+  // Get screens map for direct Yjs access
+  getScreensMap() {
+    return this.screensMap;
+  }
+}
+
 // Export default storage instance
-export const storage: Storage = new IdbStorage();
+// For now, use YjsStorage with default project
+// In the future, this could be initialized with user session info
+// SSE URL defaults to /api/yjs/sse if not specified
+const sseUrl =
+  typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_YJS_SSE_URL || "/api/yjs/sse"
+    : undefined;
+
+export const storage: Storage = new YjsStorage("default", undefined, sseUrl);
