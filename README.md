@@ -30,6 +30,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
 - 💾 **Persistent Storage**: All screens, conversations, generated content, and camera position/zoom are automatically saved to IndexedDB
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
+- ☁️ **Sync Status Indicator**: Fixed cloud icon shows offline/syncing/synced/error states with tooltips and retry, so you always know if collaboration is healthy
 - 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
 - 🎨 **Visual Selection**: Screens have a transparent border by default, display a 2px solid blue border when selected, and show a 2px solid blue border on hover when not selected
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
@@ -403,6 +404,14 @@ yarn dev
 - "A weather app showing current temperature, forecast, and location"
 - "A todo list with add button, task items, and checkboxes"
 
+### Collaboration & Persistence
+
+- **As a** user, **I want to** see my screens update in real-time across tabs or teammates, **so that** everyone stays in sync without manual refreshes
+- **As a** returning user, **I want to** reopen the app and load my last project from the server, **so that** I can continue iterating without exporting/importing data
+- **As a** user on an unstable connection, **I want to** keep working offline with IndexedDB and have changes sync when I reconnect, **so that** I don't lose progress
+
+- **As a** collaborator, **I want to** see sync status (offline, syncing, synced, error) with quick retry actions, **so that** I know whether my edits are safely stored.
+
 ## Architecture Decisions
 
 ### Why Iframe?
@@ -583,6 +592,72 @@ The `/api/create` endpoint:
 
 - Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
 
+## Real-time Collaboration & Persistence
+
+### High-Level Flow
+
+1. **Client-side doc** (`src/lib/yjs-provider.ts`):
+   - Creates a Yjs `Doc` per project, persists it locally with `y-indexeddb`, and listens for browser online/offline events.
+   - Every user action in `src/app/page.tsx` (create, drag, clone, delete, prompt updates) writes to the doc with the `"user-action"` origin so only intentional mutations are sent upstream.
+2. **SSE downlink** (`/api/yjs/sse`):
+   - The browser opens a Server-Sent Events stream (defaults to `/api/yjs/sse`, override with `NEXT_PUBLIC_YJS_SSE_URL`).
+   - The API keeps an in-memory doc per project, loads the latest Prisma snapshot on first subscriber, and broadcasts Yjs updates to all connected clients.
+3. **Update uplink** (`/api/yjs/update`):
+   - The client batches local updates, encodes them as base64, and POSTs them.
+   - The server applies the update with `"http"` origin so it is not echoed back to the sender, then fans it out to other listeners.
+4. **Database sync**:
+   - After each update the server persists the canonical doc to Postgres (see `prisma/migrations/20251112204240_init/migration.sql`).
+   - `/api/yjs/sync` is available for manual reconciliation jobs that send a full Yjs state vector.
+5. **Cold start load** (`/api/projects/[id]`):
+   - When a client lacks IndexedDB data it can hit this route to hydrate `ScreenData[]` plus the project metadata before connecting to Yjs.
+
+### Client Integration
+
+- `src/lib/storage.ts` now exports a `YjsStorage` wrapper:
+  - Bootstraps Yjs, replays IndexedDB state into the doc if the server doc is empty, and exposes helper getters (`getYjsProvider`, `getScreensMap`).
+  - Keeps IndexedDB as a local backup while letting the live Yjs doc drive the source of truth.
+  - Only syncs screens that contain completed conversation points to avoid persisting empty shells.
+- `src/app/page.tsx` keeps React state aligned with the shared doc by:
+  - Mirroring every CRUD operation through `screenDataToYjs` / `yjsToScreenData`.
+  - Observing the Yjs map so remote edits, other browser tabs, or teammates appear instantly.
+  - Debouncing IndexedDB writes to prevent feedback loops (Yjs handles cross-client sync; IndexedDB is only a resilience layer).
+
+### Server Endpoints & Files
+
+- `src/app/api/yjs/sse/route.ts`: Authenticated SSE stream, document bootstrap from Prisma, fan-out to connected browsers.
+- `src/app/api/yjs/update/route.ts`: Receives base64 updates, applies them to the in-memory doc, and triggers asynchronous Prisma persistence.
+- `src/app/api/yjs/sync/route.ts`: Accepts a full Yjs update payload for manual reconciliation or admin tooling.
+- `src/app/api/projects/[id]/route.ts`: Fetches a project plus all screens/conversation points (ordered) for first-load hydration.
+
+### Database Schema
+
+- Defined in `prisma/schema.prisma` and includes:
+  - `Project`: Workspace metadata (`id`, `name`).
+  - `Screen`: Stores `position`, `height`, timestamps, and belongs to a project.
+  - `ConversationPoint`: Stores prompt, HTML, title, timestamp, arrow metadata, and ordering index per screen.
+  - `ProjectMember` / `User`: Ready for granular access control (editor/viewer/owner roles).
+- Generated via the initial migration at `prisma/migrations/20251112204240_init/migration.sql`.
+- Accessed through the singleton Prisma client in `src/lib/prisma.ts`.
+
+### Local Setup Checklist
+
+1. Provision a Postgres database (Neon works great) and set `DATABASE_URL`.
+2. Install dependencies and run migrations:
+
+   ```bash
+   yarn install
+   npx prisma migrate deploy   # or `npx prisma db push` while iterating locally
+   ```
+
+3. (Optional) Inspect/edit data with Prisma Studio:
+
+   ```bash
+   npx prisma studio
+   ```
+
+4. Start the app (`yarn dev`) and open multiple tabs to see the collaborative flow in action.
+5. If your API lives on a different origin, set `NEXT_PUBLIC_YJS_SSE_URL` to the fully qualified SSE endpoint so the browser can connect.
+
 ## Development
 
 ### Development Workflow
@@ -686,6 +761,8 @@ The `/api/create` endpoint:
 - `AUTH_URL`: Base URL for authentication (`http://localhost:3000` for local development)
 - `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
 - `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
+- `DATABASE_URL`: PostgreSQL connection string for Prisma (Neon works great for local + cloud)
+- `NEXT_PUBLIC_YJS_SSE_URL` (optional): Override for the browser SSE endpoint if the API isn't served from the same origin
 
 #### Production (Vercel)
 

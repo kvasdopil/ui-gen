@@ -52,6 +52,7 @@ model Screen {
   projectId String
   position  Json?    // { x: number, y: number }
   height    Int?
+  selectedPromptIndex Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

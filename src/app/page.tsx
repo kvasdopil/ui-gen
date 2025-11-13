@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import Screen from "@/components/Screen";
+import SyncStatusIndicator from "@/components/SyncStatusIndicator";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
 import NewScreenDialog from "@/components/NewScreenDialog";
@@ -11,7 +12,13 @@ import Viewport, { type ViewportHandle } from "@/components/Viewport";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ScreenData, ConversationPointArrow } from "@/lib/types";
 import { storage } from "@/lib/storage";
-import { screenDataToYjs, yjsToScreenData, getYjsProvider } from "@/lib/yjs-provider";
+import type { Storage as StorageInterface } from "@/lib/storage";
+import {
+  screenDataToYjs,
+  yjsToScreenData,
+  type YjsStatusSnapshot,
+  type YjsProviderInstance,
+} from "@/lib/yjs-provider";
 import * as Y from "yjs";
 
 // Grid size for snapping
@@ -21,6 +28,13 @@ const GRID_SIZE = 16;
 const snapToGrid = (value: number): number => {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
 };
+
+type StorageWithInternals = StorageInterface & {
+  idbStorage?: { saveScreens: (screens: ScreenData[]) => Promise<void> };
+  getYjsProvider?: () => Promise<YjsProviderInstance | null>;
+};
+
+const enhancedStorage = storage as StorageWithInternals;
 
 export default function Home() {
   useSession(); // Keep for auth initialization
@@ -35,11 +49,7 @@ export default function Home() {
   const justFinishedDraggingRef = useRef<string | null>(null);
   const [isCreateScreenPopupMode, setIsCreateScreenPopupMode] = useState(false);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
-  const [newScreenInput, setNewScreenInput] = usePersistentState<string>(
-    "newScreenInput",
-    "",
-    300,
-  );
+  const [newScreenInput, setNewScreenInput] = usePersistentState<string>("newScreenInput", "", 300);
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
   const createScreenPopupRef = useRef<HTMLDivElement>(null);
@@ -51,9 +61,26 @@ export default function Home() {
     overlayIndex: number;
   } | null>(null);
   const hoveredScreenIdRef = useRef<string | null>(null);
+  const yjsProviderRef = useRef<YjsProviderInstance | null>(null);
   const yjsScreensMapRef = useRef<Y.Map<Y.Map<unknown>> | null>(null);
   const isYjsInitializedRef = useRef(false);
   const screensRef = useRef<ScreenData[]>([]);
+  const isInitialYjsLoadRef = useRef(true);
+  const [syncStatus, setSyncStatus] = useState<YjsStatusSnapshot | null>(null);
+  const popupScreenPosition = (() => {
+    if (typeof window === "undefined") {
+      return newScreenPosition;
+    }
+    const viewportElement = viewportHandleRef.current?.getElement();
+    if (!viewportElement) {
+      return newScreenPosition;
+    }
+    const rect = viewportElement.getBoundingClientRect();
+    return {
+      x: rect.left + newScreenPosition.x,
+      y: rect.top + newScreenPosition.y,
+    };
+  })();
 
   // Handle screen dragging and selection
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -85,10 +112,11 @@ export default function Home() {
       const screenId = screenContainer.id;
       const screen = screens.find((s) => s.id === screenId);
 
-      // Only allow dragging if screen is not selected
-      if (screen && screen.id !== selectedScreenId) {
-        // Deselect current screen when starting to drag another screen
-        setSelectedScreenId(null);
+      if (screen) {
+        // Deselect when starting to drag a different screen, but keep selection for the active one
+        if (screen.id !== selectedScreenId) {
+          setSelectedScreenId(null);
+        }
 
         // Set up potential screen drag (but don't mark as dragging yet)
         const viewportElement = viewportHandleRef.current?.getElement();
@@ -106,7 +134,6 @@ export default function Home() {
         }
         return;
       }
-      // If screen is selected, let it handle the click (don't drag)
       return;
     }
 
@@ -130,8 +157,9 @@ export default function Home() {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    // Only handle dragging if mouse button is pressed
-    if (!isMouseDown) return;
+    const isArrowDrawing = Boolean(arrowLine);
+    // Only handle dragging if mouse button is pressed or we're actively drawing an arrow
+    if (!isMouseDown && !isArrowDrawing) return;
 
     // Handle arrow line drawing
     if (arrowLine) {
@@ -144,9 +172,7 @@ export default function Home() {
         // Check if mouse is over a screen (but not the start screen)
         // Use elementFromPoint to get the element at mouse position, as e.target might be a child
         const elementAtPoint =
-          typeof document !== "undefined"
-            ? document.elementFromPoint(e.clientX, e.clientY)
-            : null;
+          typeof document !== "undefined" ? document.elementFromPoint(e.clientX, e.clientY) : null;
         const screenContainer = elementAtPoint?.closest(
           "[data-screen-container]",
         ) as HTMLElement | null;
@@ -207,7 +233,15 @@ export default function Home() {
     }
   };
 
-  const handleMouseUp = (e?: React.MouseEvent) => {
+  const persistScreensToIdb = useCallback(async (data: ScreenData[]) => {
+    if (enhancedStorage.idbStorage?.saveScreens) {
+      await enhancedStorage.idbStorage.saveScreens(data);
+    } else {
+      await storage.saveScreens(data);
+    }
+  }, []);
+
+  const handleMouseUp = async (e?: React.MouseEvent) => {
     // If event is provided, check if clicking on the new screen form itself
     if (e) {
       const target = e.target as HTMLElement;
@@ -251,7 +285,10 @@ export default function Home() {
                 ? startScreen.conversationPoints.length - 1
                 : null;
 
-          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
+          if (
+            conversationPointIndex !== null &&
+            conversationPointIndex < startScreen.conversationPoints.length
+          ) {
             // Get the conversation point
             const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
 
@@ -319,15 +356,35 @@ export default function Home() {
 
         // SYNC DRAG COMPLETION VIA YJS
         const draggedScreen = screens.find((s) => s.id === draggedScreenId);
-        if (draggedScreen && yjsScreensMapRef.current && isYjsInitializedRef.current && yjsScreensMapRef.current.doc) {
-          const hasCompletedPoints = draggedScreen.conversationPoints.some(
-            (point) => point.html && point.html.trim().length > 0,
-          );
-          if (hasCompletedPoints) {
-            yjsScreensMapRef.current.doc.transact(() => {
-              const yScreen = screenDataToYjs(draggedScreen);
-              yjsScreensMapRef.current!.set(draggedScreenId, yScreen);
+        if (draggedScreen) {
+          await persistScreensToIdb(screensRef.current);
+          const yjsScreensMap = yjsScreensMapRef.current;
+          if (
+            yjsScreensMap &&
+            isYjsInitializedRef.current &&
+            yjsScreensMap.doc &&
+            draggedScreen.conversationPoints.some(
+              (point) => point.html && point.html.trim().length > 0,
+            )
+          ) {
+            console.log("[Page] Drag completion: syncing to Yjs with user-action", {
+              screenId: draggedScreenId,
+              stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
+            });
+            yjsScreensMap.doc.transact(() => {
+              const existingScreen = yjsScreensMap.get(draggedScreenId);
+              if (existingScreen) {
+                existingScreen.set("position", draggedScreen.position || null);
+              } else {
+                const yScreen = screenDataToYjs(draggedScreen);
+                yjsScreensMap.set(draggedScreenId, yScreen);
+              }
             }, "user-action");
+
+            console.log(
+              `[Yjs] Synced drag completion for ${draggedScreenId} at`,
+              draggedScreen.position,
+            );
           }
         }
 
@@ -389,7 +446,6 @@ export default function Home() {
     }
   };
 
-
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
     (screenId: string) => {
@@ -426,8 +482,7 @@ export default function Home() {
             // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
             const screenCenterXViewport =
               screenRect.left + screenRect.width / 2 - viewportRect.left;
-            const screenCenterYViewport =
-              screenRect.top + screenRect.height / 2 - viewportRect.top;
+            const screenCenterYViewport = screenRect.top + screenRect.height / 2 - viewportRect.top;
 
             // Convert to content coordinates
             screenCenterXContent =
@@ -488,18 +543,22 @@ export default function Home() {
     };
     setScreens((prevScreens) => [...prevScreens, newScreen]);
 
-        // Sync to Yjs (only if screen has completed conversation points)
-        if (yjsScreensMapRef.current && isYjsInitializedRef.current && yjsScreensMapRef.current.doc) {
-          const hasCompletedPoints = newScreen.conversationPoints.some(
-            (point) => point.html && point.html.trim().length > 0,
-          );
-          if (hasCompletedPoints) {
-            yjsScreensMapRef.current.doc.transact(() => {
-              const yScreen = screenDataToYjs(newScreen);
-              yjsScreensMapRef.current!.set(newScreen.id, yScreen);
-            }, "user-action");
-          }
-        }
+    // Sync to Yjs (only if screen has completed conversation points)
+    if (yjsScreensMapRef.current && isYjsInitializedRef.current && yjsScreensMapRef.current.doc) {
+      const hasCompletedPoints = newScreen.conversationPoints.some(
+        (point) => point.html && point.html.trim().length > 0,
+      );
+      if (hasCompletedPoints) {
+        console.log("[Page] Create screen: syncing to Yjs with user-action", {
+          screenId: newScreen.id,
+          stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
+        });
+        yjsScreensMapRef.current.doc.transact(() => {
+          const yScreen = screenDataToYjs(newScreen);
+          yjsScreensMapRef.current!.set(newScreen.id, yScreen);
+        }, "user-action");
+      }
+    }
 
     // Don't auto-select - let user click to select if they want
     // setSelectedScreenId(newScreen.id);
@@ -551,6 +610,32 @@ export default function Home() {
 
   // Handle screen update - SYNC VIA YJS (only for completed screens)
   const handleScreenUpdate = useCallback((screenId: string, updates: Partial<ScreenData>) => {
+    // Skip syncing to Yjs if we're currently processing a server update (prevent feedback loop)
+    if (yjsProviderRef.current?.isProcessingServerUpdate) {
+      console.log("[Page] handleScreenUpdate: skipping Yjs sync (processing server update)", {
+        screenId,
+        updates: Object.keys(updates),
+      });
+      // Still update React state, but don't sync back to Yjs
+      setScreens((prevScreens) => {
+        const screenIndex = prevScreens.findIndex((s) => s.id === screenId);
+        if (screenIndex === -1) {
+          return prevScreens;
+        }
+        return prevScreens.map((screen) => {
+          if (screen.id === screenId) {
+            const updatedScreen = { ...screen, ...updates };
+            if (!updates.position && screen.position) {
+              updatedScreen.position = screen.position;
+            }
+            return updatedScreen;
+          }
+          return screen;
+        });
+      });
+      return;
+    }
+
     // Use functional update to avoid race conditions when multiple screens update simultaneously
     setScreens((prevScreens) => {
       const screenIndex = prevScreens.findIndex((s) => s.id === screenId);
@@ -565,23 +650,37 @@ export default function Home() {
           // Always preserve position unless explicitly updated
           // This ensures position is never lost during updates
           const updatedScreen = { ...screen, ...updates };
+          const updateKeys = Object.keys(updates);
+          const isPositionOnlyUpdate = updateKeys.length === 1 && updateKeys[0] === "position";
+
           if (!updates.position && screen.position) {
             // Preserve existing position if not being updated
             updatedScreen.position = screen.position;
           }
 
-          // Sync to Yjs (only if screen has completed conversation points)
-          if (yjsScreensMapRef.current && isYjsInitializedRef.current && yjsScreensMapRef.current.doc) {
+          // Sync to Yjs
+          // - Always sync position updates (even for incomplete screens)
+          // - Only sync conversation points if screen has completed points
+          if (
+            !isPositionOnlyUpdate &&
+            yjsScreensMapRef.current &&
+            isYjsInitializedRef.current &&
+            yjsScreensMapRef.current.doc
+          ) {
             const hasCompletedPoints = updatedScreen.conversationPoints.some(
               (point) => point.html && point.html.trim().length > 0,
             );
+
             if (hasCompletedPoints) {
+              console.log("[Page] Update screen: syncing to Yjs with user-action", {
+                screenId,
+                stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
+              });
               yjsScreensMapRef.current.doc.transact(() => {
                 const yScreen = screenDataToYjs(updatedScreen);
                 yjsScreensMapRef.current!.set(screenId, yScreen);
               }, "user-action");
             } else {
-              // Remove incomplete screens from Yjs
               yjsScreensMapRef.current.delete(screenId);
             }
           }
@@ -622,6 +721,10 @@ export default function Home() {
 
       // Sync deletion to Yjs
       if (yjsScreensMapRef.current && isYjsInitializedRef.current && yjsScreensMapRef.current.doc) {
+        console.log("[Page] Delete screen: syncing to Yjs with user-action", {
+          screenId,
+          stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
+        });
         yjsScreensMapRef.current.doc.transact(() => {
           yjsScreensMapRef.current!.delete(screenId);
         }, "user-action");
@@ -648,9 +751,9 @@ export default function Home() {
         selectedPromptIndex: pointIndex,
         position: originalScreen.position
           ? {
-            x: snapToGrid(originalScreen.position.x + 50),
-            y: snapToGrid(originalScreen.position.y + 50),
-          }
+              x: snapToGrid(originalScreen.position.x + 50),
+              y: snapToGrid(originalScreen.position.y + 50),
+            }
           : { x: snapToGrid(50), y: snapToGrid(50) },
       };
 
@@ -662,6 +765,10 @@ export default function Home() {
           (point) => point.html && point.html.trim().length > 0,
         );
         if (hasCompletedPoints) {
+          console.log("[Page] Clone screen: syncing to Yjs with user-action", {
+            screenId: clonedScreen.id,
+            stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
+          });
           yjsScreensMapRef.current.doc.transact(() => {
             const yScreen = screenDataToYjs(clonedScreen);
             yjsScreensMapRef.current!.set(clonedScreen.id, yScreen);
@@ -690,7 +797,10 @@ export default function Home() {
                 ? startScreen.conversationPoints.length - 1
                 : null;
 
-          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
+          if (
+            conversationPointIndex !== null &&
+            conversationPointIndex < startScreen.conversationPoints.length
+          ) {
             // Get the conversation point
             const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
 
@@ -729,6 +839,16 @@ export default function Home() {
     [screens, handleScreenUpdate],
   );
 
+  const handleRetrySync = useCallback(() => {
+    const provider = yjsProviderRef.current;
+    if (!provider) {
+      return;
+    }
+    void provider.retrySync().catch((error: unknown) => {
+      console.error("[Yjs] Retry sync failed:", error);
+    });
+  }, []);
+
   // Effect to center screen after selection - DISABLED
   // useEffect(() => {
   //   if (selectedScreenId) {
@@ -745,87 +865,144 @@ export default function Home() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Get Yjs provider from storage
-        const yjsProvider = (storage as { getYjsProvider?: () => ReturnType<typeof getYjsProvider> | null }).getYjsProvider?.();
-        if (yjsProvider) {
-          const screensMap = yjsProvider.getScreensMap();
-          yjsScreensMapRef.current = screensMap;
-          isYjsInitializedRef.current = true;
+        // Get Yjs provider from storage (await initialization)
+        // Check if storage has getYjsProvider method (YjsStorage instance)
+        if (typeof enhancedStorage.getYjsProvider === "function") {
+          const yjsProvider = await enhancedStorage.getYjsProvider();
+          if (yjsProvider) {
+            yjsProviderRef.current = yjsProvider;
+            const unsubscribeStatus = yjsProvider.onStatusChange((snapshot: YjsStatusSnapshot) => {
+              setSyncStatus(snapshot);
+            });
+            const screensMap = yjsProvider.getScreensMap();
+            yjsScreensMapRef.current = screensMap;
+            isYjsInitializedRef.current = true;
+            console.log("[Yjs] Yjs initialized successfully");
 
-          // Subscribe to Yjs changes (remote updates)
-          const handleYjsUpdate = () => {
-            if (!screensMap) return;
+            // Subscribe to Yjs changes (remote updates)
+            const handleYjsUpdate = () => {
+              if (!screensMap) return;
 
-            const yjsScreens: ScreenData[] = [];
-            screensMap.forEach((yScreen: Y.Map<unknown>) => {
-              try {
-                const screenData = yjsToScreenData(yScreen);
-                // Add selectedPromptIndex if missing (client-side state)
-                const fullScreenData: ScreenData = {
-                  ...screenData,
-                  selectedPromptIndex: screenData.selectedPromptIndex ?? null,
-                };
-                yjsScreens.push(fullScreenData);
-              } catch (error: unknown) {
-                console.error("Error converting Yjs screen to ScreenData:", error);
+              const yjsScreens: ScreenData[] = [];
+              screensMap.forEach((yScreen: Y.Map<unknown>) => {
+                try {
+                  const screenData = yjsToScreenData(yScreen);
+                  // Add selectedPromptIndex if missing (client-side state)
+                  const fullScreenData: ScreenData = {
+                    ...screenData,
+                    selectedPromptIndex: screenData.selectedPromptIndex ?? null,
+                  };
+                  yjsScreens.push(fullScreenData);
+                } catch (error: unknown) {
+                  console.error("Error converting Yjs screen to ScreenData:", error);
+                }
+              });
+
+              // Only update if screens have actually changed to prevent infinite loops
+              const currentScreens = screensRef.current;
+              if (currentScreens.length !== yjsScreens.length) {
+                setScreens(yjsScreens);
+                // Only save to IndexedDB if not initial load (to prevent loops)
+                if (!isInitialYjsLoadRef.current) {
+                  storage.saveScreens(yjsScreens).catch((error) => {
+                    console.error("Error saving screens to IndexedDB:", error);
+                  });
+                }
+                return;
               }
-            });
 
-            // Only update if screens have actually changed to prevent infinite loops
-            const currentScreens = screensRef.current;
-            if (currentScreens.length !== yjsScreens.length) {
-              setScreens(yjsScreens);
-              storage.saveScreens(yjsScreens).catch((error) => {
-                console.error("Error saving screens to IndexedDB:", error);
-              });
-              return;
+              // Compare screens by ID to check if anything changed
+              const screensChanged =
+                yjsScreens.some((yjsScreen) => {
+                  const currentScreen = currentScreens.find((s) => s.id === yjsScreen.id);
+                  if (!currentScreen) return true; // New screen added
+                  // Deep comparison of key properties
+                  return (
+                    JSON.stringify(currentScreen.position) !== JSON.stringify(yjsScreen.position) ||
+                    JSON.stringify(currentScreen.conversationPoints) !==
+                      JSON.stringify(yjsScreen.conversationPoints) ||
+                    currentScreen.height !== yjsScreen.height
+                  );
+                }) ||
+                currentScreens.some((currentScreen) => {
+                  // Check if any screen was removed
+                  return !yjsScreens.find((s) => s.id === currentScreen.id);
+                });
+
+              if (screensChanged) {
+                // Update React state with Yjs data
+                setScreens(yjsScreens);
+                // Only save to IndexedDB if not initial load (to prevent loops)
+                if (!isInitialYjsLoadRef.current) {
+                  storage.saveScreens(yjsScreens).catch((error) => {
+                    console.error("Error saving screens to IndexedDB:", error);
+                  });
+                }
+              }
+            };
+
+            // Initial load from Yjs
+            handleYjsUpdate();
+
+            // Mark initial load as complete after a short delay
+            // This prevents save loops during initial sync
+            setTimeout(() => {
+              isInitialYjsLoadRef.current = false;
+              console.log("[Yjs] Initial load complete, Yjs updates will now trigger saves");
+            }, 1000);
+
+            // Subscribe to Yjs changes
+            screensMap.observe(handleYjsUpdate);
+
+            // Cleanup
+            return () => {
+              screensMap.unobserve(handleYjsUpdate);
+              unsubscribeStatus();
+              if (yjsProviderRef.current === yjsProvider) {
+                yjsProviderRef.current = null;
+              }
+            };
+          } else {
+            console.warn("[Yjs] Yjs provider returned null");
+            yjsProviderRef.current = null;
+            setSyncStatus(null);
+            // Fallback: load from IndexedDB only
+            const loadedScreens = await storage.loadScreens();
+            if (loadedScreens.length > 0) {
+              setScreens(loadedScreens);
             }
-
-            // Compare screens by ID to check if anything changed
-            const screensChanged = yjsScreens.some((yjsScreen) => {
-              const currentScreen = currentScreens.find((s) => s.id === yjsScreen.id);
-              if (!currentScreen) return true; // New screen added
-              // Deep comparison of key properties
-              return (
-                JSON.stringify(currentScreen.position) !== JSON.stringify(yjsScreen.position) ||
-                JSON.stringify(currentScreen.conversationPoints) !== JSON.stringify(yjsScreen.conversationPoints) ||
-                currentScreen.height !== yjsScreen.height
-              );
-            }) || currentScreens.some((currentScreen) => {
-              // Check if any screen was removed
-              return !yjsScreens.find((s) => s.id === currentScreen.id);
-            });
-
-            if (screensChanged) {
-              // Update React state with Yjs data
-              setScreens(yjsScreens);
-              // Also save to IndexedDB for offline support
-              storage.saveScreens(yjsScreens).catch((error) => {
-                console.error("Error saving screens to IndexedDB:", error);
-              });
-            }
-          };
-
-          // Initial load from Yjs
-          handleYjsUpdate();
-
-          // Subscribe to Yjs changes
-          screensMap.observe(handleYjsUpdate);
-
-          // Cleanup
-          return () => {
-            screensMap.unobserve(handleYjsUpdate);
-          };
+            // Mark initial load as complete immediately for IndexedDB-only mode
+            isInitialYjsLoadRef.current = false;
+            setIsLoadingScreens(false);
+          }
         } else {
+          console.warn("[Yjs] Yjs provider not available, falling back to IndexedDB only");
+          yjsProviderRef.current = null;
+          setSyncStatus(null);
           // Fallback: load from IndexedDB only
           const loadedScreens = await storage.loadScreens();
           if (loadedScreens.length > 0) {
             setScreens(loadedScreens);
           }
+          // Mark initial load as complete immediately for IndexedDB-only mode
+          isInitialYjsLoadRef.current = false;
           setIsLoadingScreens(false);
         }
       } catch (error) {
-        console.error("Error loading data:", error);
+        console.error("[Yjs] Error initializing Yjs:", error);
+        yjsProviderRef.current = null;
+        setSyncStatus(null);
+        // Fallback: load from IndexedDB only
+        try {
+          const loadedScreens = await storage.loadScreens();
+          if (loadedScreens.length > 0) {
+            setScreens(loadedScreens);
+          }
+        } catch (loadError) {
+          console.error("Error loading screens from IndexedDB:", loadError);
+        }
+        // Mark initial load as complete even on error
+        isInitialYjsLoadRef.current = false;
         setIsLoadingScreens(false);
       } finally {
         setIsLoadingScreens(false);
@@ -838,34 +1015,37 @@ export default function Home() {
   // Save screens to IndexedDB whenever they change (debounced to prevent race conditions)
   // Note: Yjs sync happens directly in screen operations, this is just for IndexedDB backup
   useEffect(() => {
-    if (!isLoadingScreens && screens.length >= 0 && isYjsInitializedRef.current) {
-      // Clear existing timeout
-      if (screensSaveTimeoutRef.current) {
-        clearTimeout(screensSaveTimeoutRef.current);
-      }
-
-      // Debounce save by 300ms to batch rapid updates and prevent race conditions
-      screensSaveTimeoutRef.current = setTimeout(() => {
-        // Only save to IndexedDB, Yjs sync is handled in operations
-        (storage as { idbStorage?: { saveScreens: (screens: ScreenData[]) => Promise<void> } }).idbStorage?.saveScreens(screens).catch((error: unknown) => {
-          console.error("Error saving screens to IndexedDB:", error);
-        });
-      }, 300);
+    if (screensSaveTimeoutRef.current) {
+      clearTimeout(screensSaveTimeoutRef.current);
     }
 
-    // Cleanup timeout on unmount
+    if (
+      isDraggingScreen ||
+      isInitialYjsLoadRef.current ||
+      isLoadingScreens ||
+      screens.length < 0 ||
+      !isYjsInitializedRef.current
+    ) {
+      return;
+    }
+
+    screensSaveTimeoutRef.current = setTimeout(() => {
+      void persistScreensToIdb(screens).catch((error: unknown) => {
+        console.error("Error saving screens to IndexedDB:", error);
+      });
+    }, 300);
+
     return () => {
       if (screensSaveTimeoutRef.current) {
         clearTimeout(screensSaveTimeoutRef.current);
       }
     };
-  }, [screens, isLoadingScreens]);
-
-
+  }, [isDraggingScreen, isLoadingScreens, persistScreensToIdb, screens]);
 
   return (
     <>
       <UserAvatar />
+      {syncStatus && <SyncStatusIndicator status={syncStatus} onRetry={handleRetrySync} />}
       <Viewport
         ref={viewportHandleRef}
         disabled={!!draggedScreenId}
@@ -878,13 +1058,13 @@ export default function Home() {
             setIsCreateScreenPopupMode(false);
           }
         }}
+        onContextMenu={handleContextMenu}
       >
         <div
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onContextMenu={handleContextMenu}
           style={{ cursor: isDraggingScreen ? "grabbing" : "default" }}
         >
           {/* Arrow line overlay - rendered in content coordinates */}
@@ -906,19 +1086,19 @@ export default function Home() {
 
               const startScreenBounds = startScreen?.position
                 ? {
-                  x: startScreen.position.x,
-                  y: startScreen.position.y,
-                  width: 390,
-                  height: startScreen.height || 844,
-                }
+                    x: startScreen.position.x,
+                    y: startScreen.position.y,
+                    width: 390,
+                    height: startScreen.height || 844,
+                  }
                 : undefined;
               const endScreenBounds = endScreen?.position
                 ? {
-                  x: endScreen.position.x,
-                  y: endScreen.position.y,
-                  width: 390,
-                  height: endScreen.height || 844,
-                }
+                    x: endScreen.position.x,
+                    y: endScreen.position.y,
+                    width: 390,
+                    height: endScreen.height || 844,
+                  }
                 : undefined;
               return (
                 <ArrowLine
@@ -933,49 +1113,51 @@ export default function Home() {
           {screens.flatMap((screen) => {
             if (!screen.position) return [];
 
-            return screen.conversationPoints.flatMap((conversationPoint, conversationPointIndex) => {
-              const arrows = conversationPoint.arrows || [];
-              return arrows.map((arrow, arrowIndex) => {
-                const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+            return screen.conversationPoints.flatMap(
+              (conversationPoint, conversationPointIndex) => {
+                const arrows = conversationPoint.arrows || [];
+                return arrows.map((arrow, arrowIndex) => {
+                  const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
 
-                // Calculate start point: use stored startPoint if available, otherwise use screen center
-                const startContentX = arrow.startPoint
-                  ? screen.position!.x + arrow.startPoint.x
-                  : screen.position!.x;
-                const startContentY = arrow.startPoint
-                  ? screen.position!.y + arrow.startPoint.y
-                  : screen.position!.y;
+                  // Calculate start point: use stored startPoint if available, otherwise use screen center
+                  const startContentX = arrow.startPoint
+                    ? screen.position!.x + arrow.startPoint.x
+                    : screen.position!.x;
+                  const startContentY = arrow.startPoint
+                    ? screen.position!.y + arrow.startPoint.y
+                    : screen.position!.y;
 
-                // End point is target screen center
-                const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
-                const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
+                  // End point is target screen center
+                  const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
+                  const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
 
-                const startScreenBounds = {
-                  x: screen.position!.x,
-                  y: screen.position!.y,
-                  width: 390,
-                  height: screen.height || 844,
-                };
-                const endScreenBounds = endScreen?.position
-                  ? {
-                    x: endScreen.position.x,
-                    y: endScreen.position.y,
+                  const startScreenBounds = {
+                    x: screen.position!.x,
+                    y: screen.position!.y,
                     width: 390,
-                    height: endScreen.height || 844,
-                  }
-                  : undefined;
+                    height: screen.height || 844,
+                  };
+                  const endScreenBounds = endScreen?.position
+                    ? {
+                        x: endScreen.position.x,
+                        y: endScreen.position.y,
+                        width: 390,
+                        height: endScreen.height || 844,
+                      }
+                    : undefined;
 
-                return (
-                  <ArrowLine
-                    key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
-                    start={{ x: startContentX, y: startContentY }}
-                    end={{ x: endContentX, y: endContentY }}
-                    startScreenBounds={startScreenBounds}
-                    endScreenBounds={endScreenBounds}
-                  />
-                );
-              });
-            });
+                  return (
+                    <ArrowLine
+                      key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
+                      start={{ x: startContentX, y: startContentY }}
+                      end={{ x: endContentX, y: endContentY }}
+                      startScreenBounds={startScreenBounds}
+                      endScreenBounds={endScreenBounds}
+                    />
+                  );
+                });
+              },
+            );
           })}
           {!isLoadingScreens && screens.length === 0 && (
             <div
@@ -1030,32 +1212,31 @@ export default function Home() {
             );
           })}
         </div>
-
-        {/* Create Screen Popup - initial popup with Mobile app button */}
-        {isCreateScreenPopupMode && (
-          <CreateScreenPopup
-            ref={createScreenPopupRef}
-            position={newScreenPosition}
-            onSelect={() => {
-              setIsCreateScreenPopupMode(false);
-              setIsNewScreenMode(true);
-            }}
-            onDismiss={() => setIsCreateScreenPopupMode(false)}
-          />
-        )}
-
-        {/* New Screen Dialog */}
-        {isNewScreenMode && (
-          <NewScreenDialog
-            ref={newScreenFormRef}
-            position={newScreenPosition}
-            value={newScreenInput}
-            onChange={setNewScreenInput}
-            onSubmit={handleCreateNewScreen}
-            onDismiss={() => setIsNewScreenMode(false)}
-          />
-        )}
       </Viewport>
+      {/* Create Screen Popup - initial popup with Mobile app button */}
+      {isCreateScreenPopupMode && (
+        <CreateScreenPopup
+          ref={createScreenPopupRef}
+          position={popupScreenPosition}
+          onSelect={() => {
+            setIsCreateScreenPopupMode(false);
+            setIsNewScreenMode(true);
+          }}
+          onDismiss={() => setIsCreateScreenPopupMode(false)}
+        />
+      )}
+
+      {/* New Screen Dialog */}
+      {isNewScreenMode && (
+        <NewScreenDialog
+          ref={newScreenFormRef}
+          position={popupScreenPosition}
+          value={newScreenInput}
+          onChange={setNewScreenInput}
+          onSubmit={handleCreateNewScreen}
+          onDismiss={() => setIsNewScreenMode(false)}
+        />
+      )}
     </>
   );
 }

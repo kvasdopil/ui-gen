@@ -3,18 +3,16 @@ import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import type { ScreenData } from "@/lib/types";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_request: NextRequest, _context: { params: Promise<{ id: string }> }) {
   try {
+    void _request;
+    void _context;
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-    const projectId = id || "default";
+    const projectId = session.user.id;
 
     // Get or create project
     let project = await prisma.project.findUnique({
@@ -57,9 +55,14 @@ export async function GET(
         html: point.html,
         title: point.title || null,
         timestamp: Number(point.timestamp),
-        arrows: (point.arrows as Array<{ overlayIndex: number; targetScreenId: string; startPoint?: { x: number; y: number } }> | null) || undefined,
+        arrows:
+          (point.arrows as Array<{
+            overlayIndex: number;
+            targetScreenId: string;
+            startPoint?: { x: number; y: number };
+          }> | null) || undefined,
       })),
-      selectedPromptIndex: null, // This is client-side state
+      selectedPromptIndex: screen.selectedPromptIndex ?? null,
       position: (screen.position as { x: number; y: number } | null) || undefined,
       height: screen.height || undefined,
     }));
@@ -70,4 +73,3 @@ export async function GET(
     return NextResponse.json({ error: "Failed to fetch project" }, { status: 500 });
   }
 }
-

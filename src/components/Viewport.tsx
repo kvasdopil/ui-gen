@@ -1,6 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, ReactNode, forwardRef, useImperativeHandle } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  ReactNode,
+  forwardRef,
+  useImperativeHandle,
+  type MouseEventHandler,
+} from "react";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ViewportTransform } from "@/lib/storage";
 
@@ -19,23 +28,15 @@ interface ViewportProps {
   onPanEnd?: () => void;
   onTransformChange?: (transform: ViewportTransform) => void;
   disabled?: boolean; // When true, panning is disabled (e.g., when dragging a screen)
+  onContextMenu?: MouseEventHandler<HTMLDivElement>;
 }
 
 const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
-  {
-    children,
-    onPanStart,
-    onPanEnd,
-    onTransformChange,
-    disabled = false,
-  },
+  { children, onPanStart, onPanEnd, onTransformChange, disabled = false, onContextMenu },
   ref,
 ) {
-  const [viewportTransform, setViewportTransform, hasLoaded] = usePersistentState<ViewportTransform>(
-    "viewportTransform",
-    { x: 0, y: 0, scale: 1 },
-    500,
-  );
+  const [viewportTransform, setViewportTransform, hasLoaded] =
+    usePersistentState<ViewportTransform>("viewportTransform", { x: 0, y: 0, scale: 1 }, 500);
   const viewportTransformRef = useRef<ViewportTransform>({ x: 0, y: 0, scale: 1 });
   const viewportRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
@@ -129,7 +130,16 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
         onTransformChange?.(newTransform);
       }
     },
-    [isMouseDown, disabled, dragStart, viewportTransform, isDragging, onPanStart, onTransformChange, setViewportTransform],
+    [
+      isMouseDown,
+      disabled,
+      dragStart,
+      viewportTransform,
+      isDragging,
+      onPanStart,
+      onTransformChange,
+      setViewportTransform,
+    ],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -226,7 +236,6 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
     }
   }, [viewportTransform, onTransformChange]);
 
-
   return (
     <div
       ref={viewportRef}
@@ -235,6 +244,7 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onContextMenu={onContextMenu}
       style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
       <div
@@ -251,4 +261,3 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
 });
 
 export default Viewport;
-

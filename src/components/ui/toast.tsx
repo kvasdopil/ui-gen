@@ -32,16 +32,11 @@ export function toast(message: string) {
 }
 
 export function Toaster() {
-  const [currentToasts, setCurrentToasts] = useState<Toast[]>([]);
-  const [mounted, setMounted] = useState(false);
+  const [currentToasts, setCurrentToasts] = useState<Toast[]>(() =>
+    typeof window !== "undefined" ? toasts : [],
+  );
 
   useEffect(() => {
-    // Mark as mounted on client
-    setMounted(true);
-    
-    // Sync with current toasts on mount
-    setCurrentToasts(toasts);
-    
     // Subscribe to toast updates
     toastListeners.push(setCurrentToasts);
 
@@ -53,8 +48,8 @@ export function Toaster() {
     };
   }, []);
 
-  // Don't render during SSR - wait for client mount
-  if (!mounted || typeof document === "undefined") {
+  // Don't render during SSR - rely on document availability
+  if (typeof document === "undefined") {
     return null;
   }
 
@@ -75,4 +70,3 @@ export function Toaster() {
     document.body,
   );
 }
-

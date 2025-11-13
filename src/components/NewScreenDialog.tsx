@@ -70,4 +70,3 @@ const NewScreenDialog = forwardRef<HTMLDivElement, NewScreenDialogProps>(
 NewScreenDialog.displayName = "NewScreenDialog";
 
 export default NewScreenDialog;
-

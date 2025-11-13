@@ -9,6 +9,21 @@ export type ViewportTransform = {
   scale: number;
 };
 
+const LOCAL_ONLY_VECTOR = "local-only";
+
+const uint8ArrayToBase64 = (data: Uint8Array): string => {
+  if (typeof window === "undefined") {
+    return Buffer.from(data).toString("base64");
+  }
+  let binaryString = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.subarray(i, Math.min(i + chunkSize, data.length));
+    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binaryString);
+};
+
 interface UIDatabase extends DBSchema {
   screens: {
     key: string;
@@ -25,6 +40,10 @@ interface UIDatabase extends DBSchema {
       screenId: string | null;
       position: { x: number; y: number } | null;
     };
+  };
+  metadata: {
+    key: string;
+    value: string;
   };
 }
 
@@ -49,7 +68,7 @@ export interface Storage {
 
 class IdbStorage implements Storage {
   private dbName = "ui-gen-db";
-  private dbVersion = 3;
+  private dbVersion = 4;
   private db: IDBPDatabase<UIDatabase> | null = null;
 
   private async getDB(): Promise<IDBPDatabase<UIDatabase>> {
@@ -67,6 +86,9 @@ class IdbStorage implements Storage {
         }
         if (!db.objectStoreNames.contains("pendingPrompt")) {
           db.createObjectStore("pendingPrompt");
+        }
+        if (!db.objectStoreNames.contains("metadata")) {
+          db.createObjectStore("metadata");
         }
       },
     });
@@ -164,6 +186,37 @@ class IdbStorage implements Storage {
       throw error;
     }
   }
+
+  async setMetadata(key: string, value: string): Promise<void> {
+    try {
+      const db = await this.getDB();
+      await db.put("metadata", value, key);
+    } catch (error) {
+      console.error("Error saving metadata to IndexedDB:", error);
+      throw error;
+    }
+  }
+
+  async getMetadata(key: string): Promise<string | null> {
+    try {
+      const db = await this.getDB();
+      const value = await db.get("metadata", key);
+      return value ?? null;
+    } catch (error) {
+      console.error("Error loading metadata from IndexedDB:", error);
+      return null;
+    }
+  }
+
+  async deleteMetadata(key: string): Promise<void> {
+    try {
+      const db = await this.getDB();
+      await db.delete("metadata", key);
+    } catch (error) {
+      console.error("Error deleting metadata from IndexedDB:", error);
+      throw error;
+    }
+  }
 }
 
 // Yjs-integrated storage that syncs screens via Yjs while keeping IndexedDB for offline support
@@ -176,6 +229,8 @@ class YjsStorage implements Storage {
   private screensMap: Y.Map<Y.Map<unknown>> | null = null;
   private isInitialized = false;
   private initializationPromise: Promise<void> | null = null;
+  private lastServerVectorKey = "lastServerVector";
+  private lastKnownServerVector: string | null = null;
 
   constructor(projectId: string = "default", userId?: string, sseUrl?: string) {
     this.idbStorage = new IdbStorage();
@@ -197,18 +252,36 @@ class YjsStorage implements Storage {
       });
 
       this.screensMap = this.yjsProvider.getScreensMap();
+      this.lastKnownServerVector = await this.idbStorage.getMetadata(this.lastServerVectorKey);
 
       // Load initial screens from IndexedDB and sync to Yjs
+      // Only sync if Yjs is empty (to avoid overwriting server state)
       const idbScreens = await this.idbStorage.loadScreens();
-      if (idbScreens.length > 0 && this.screensMap && this.screensMap.doc) {
-        // Sync IndexedDB screens to Yjs (only on first load)
+      if (
+        idbScreens.length > 0 &&
+        this.screensMap &&
+        this.screensMap.doc &&
+        this.screensMap.size === 0 &&
+        !this.lastKnownServerVector
+      ) {
+        // Sync IndexedDB screens to Yjs (only if Yjs is empty)
         // Use "indexeddb" origin to prevent sending these updates to server
+        console.log("[Storage] Syncing IndexedDB screens to Yjs", {
+          screenCount: idbScreens.length,
+        });
         this.screensMap.doc.transact(() => {
           idbScreens.forEach((screen) => {
             const yScreen = screenDataToYjs(screen);
             this.screensMap!.set(screen.id, yScreen);
           });
         }, "indexeddb");
+        console.log("[Storage] Finished syncing IndexedDB screens to Yjs");
+        await this.idbStorage.setMetadata(this.lastServerVectorKey, LOCAL_ONLY_VECTOR);
+        this.lastKnownServerVector = LOCAL_ONLY_VECTOR;
+      } else if (idbScreens.length > 0 && this.lastKnownServerVector) {
+        await this.idbStorage.clearScreens();
+      } else if (this.screensMap && this.screensMap.size > 0) {
+        // Already hydrated from server
       }
 
       this.isInitialized = true;
@@ -223,23 +296,34 @@ class YjsStorage implements Storage {
     // Save to IndexedDB for offline support
     await this.idbStorage.saveScreens(screens);
 
-    // Sync to Yjs (only completed screens with HTML)
+    // Sync to Yjs
+    // - Always sync position (even for incomplete screens)
+    // - Only sync conversation points if screen has completed points
     // Note: This is called from the save effect, which should not trigger server updates
     // The actual user actions are handled in page.tsx with "user-action" origin
     if (this.screensMap && this.screensMap.doc) {
+      console.log("[Storage] saveScreens: syncing to Yjs", {
+        screenCount: screens.length,
+        origin: "indexeddb",
+      });
       this.screensMap.doc.transact(() => {
         screens.forEach((screen) => {
-          // Only sync screens that have at least one completed conversation point
-          const hasCompletedPoints = screen.conversationPoints.some((point) => point.html && point.html.trim().length > 0);
-          if (hasCompletedPoints) {
+          const hasCompletedPoints = screen.conversationPoints.some(
+            (point) => point.html && point.html.trim().length > 0,
+          );
+          const hasPosition = screen.position !== undefined;
+
+          // Sync if screen has completed points OR has a position to preserve
+          if (hasCompletedPoints || hasPosition) {
             const yScreen = screenDataToYjs(screen);
             this.screensMap!.set(screen.id, yScreen);
           } else {
-            // Remove incomplete screens from Yjs
+            // Remove incomplete screens from Yjs (only if no position to preserve)
             this.screensMap!.delete(screen.id);
           }
         });
       }, "indexeddb");
+      console.log("[Storage] saveScreens: finished syncing to Yjs");
     }
   }
 
@@ -265,6 +349,13 @@ class YjsStorage implements Storage {
       if (screens.length > 0) {
         // Also save to IndexedDB for offline support
         await this.idbStorage.saveScreens(screens);
+        const vectorBase64 = this.screensMap?.doc
+          ? uint8ArrayToBase64(Y.encodeStateVector(this.screensMap.doc))
+          : null;
+        if (vectorBase64) {
+          await this.idbStorage.setMetadata(this.lastServerVectorKey, vectorBase64);
+          this.lastKnownServerVector = vectorBase64;
+        }
         return screens;
       }
     }
@@ -283,6 +374,8 @@ class YjsStorage implements Storage {
         });
       }, "user-action");
     }
+    await this.idbStorage.deleteMetadata(this.lastServerVectorKey);
+    this.lastKnownServerVector = null;
   }
 
   // Viewport transform is NOT synced via Yjs (client-side only)
@@ -316,7 +409,8 @@ class YjsStorage implements Storage {
   }
 
   // Get Yjs provider for subscribing to changes
-  getYjsProvider() {
+  async getYjsProvider() {
+    await this.initialize();
     return this.yjsProvider;
   }
 
@@ -331,8 +425,6 @@ class YjsStorage implements Storage {
 // In the future, this could be initialized with user session info
 // SSE URL defaults to /api/yjs/sse if not specified
 const sseUrl =
-  typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_YJS_SSE_URL || "/api/yjs/sse"
-    : undefined;
+  typeof window !== "undefined" ? process.env.NEXT_PUBLIC_YJS_SSE_URL || "/api/yjs/sse" : undefined;
 
 export const storage: Storage = new YjsStorage("default", undefined, sseUrl);

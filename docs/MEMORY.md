@@ -561,3 +561,12 @@ interface PromptPanelProps {
 - UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference
 - OAuth environment variables: Must not have trailing newlines when setting via Vercel CLI (use `echo -n`); `AUTH_URL` must match production domain exactly
 - Auth flow preservation: When 401 occurs, prompt and screenId are saved to IndexedDB; after auth, screen is selected and generation auto-retries; pending prompts are cleared after restoration
+- 2025-03-29: Reviewed README.md and docs to refresh context; ready for follow-up implementation work.
+- 2025-03-29: Updated README with collaboration/persistence documentation (Yjs + Prisma flow, env vars, setup checklist).
+- 2025-03-29: Added docs/PERSITENCE.md detailing persistence hardening priorities and effort estimates.
+- 2025-03-29: Temporarily locked project access so only sessions whose `user.id` matches `projectId` can hit project/Yjs endpoints (simple safeguard before full membership model).
+- 2025-03-29: Implemented persistence hardening pass (shared Yjs doc store + Prisma helper, SSE state endpoint, client-side batching/state-vector sync, IndexedDB metadata clearing, linted/format run).
+- 2025-03-29: Simplified project routing—server now uses `session.user.id` as the project key (query params ignored) and client no longer sends `projectId` in Yjs requests; also delay IndexedDB/Yjs persistence until drag completes to avoid streaming position writes.
+- 2025-03-29: Added server-side state vector tracking + shared hydration helper with deduped promises so server docs preload from Prisma exactly once, cache their state vector, and skip redundant persistence when clients reconnect.
+- 2025-03-30: Read through README.md and docs to refresh high-level architecture/context per user request; ready for follow-up tasks.
+- 2025-03-30: Added fixed sync-status indicator (react-icons) wired to new Yjs provider status snapshots/retry hook so users can see offline/syncing/synced/error states with tooltip + manual retry that isn't affected by viewport transforms.
