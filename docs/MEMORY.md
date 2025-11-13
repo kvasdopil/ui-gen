@@ -257,8 +257,20 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
   - Get from Google Cloud Console > APIs & Services > Credentials
   - **Important**: When setting via Vercel CLI, use `echo -n` to avoid trailing newlines
+- `DATABASE_URL`: PostgreSQL connection string for Prisma
+  - Required for Yjs persistence and collaboration features
+  - Neon works great for local + cloud development
 
 ## Important Code Locations
+
+### Project ID Generation
+
+- **File**: `src/lib/project-id.ts`
+- **Key Functions**:
+  - `getProjectIdFromEmail(email)`: Async function that generates project ID from user email using SHA-256 hash (first 16 characters)
+  - `getProjectIdFromEmailSync(email)`: Synchronous version using simple hash function for client-side use
+  - Ensures same user on different browsers/devices uses the same project ID
+  - Returns "default" if email is null/undefined
 
 ### API Route
 
@@ -337,6 +349,10 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Ctrl/Cmd+Enter to submit modifications
   - Positioned absolutely to the right of Screen component
   - Uses `left-full ml-2` for positioning
+  - **Event Propagation Prevention**: Panel container and all interactive buttons (Create, Modify) stop event propagation to prevent clicks from bubbling to the viewport and causing screen deselection
+    - Panel container has `onClick` and `onMouseDown` handlers that call `stopPropagation()`
+    - Create button passes event to `handleCreate` which stops propagation
+    - Modify button stops propagation in its onClick handler
 
 ### Storage
 
@@ -344,12 +360,14 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Key Features**:
   - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
   - `IdbStorage` class implementing IndexedDB operations
+  - `YjsStorage` class implementing Yjs integration with IndexedDB persistence
   - Uses `idb` package for IndexedDB wrapper
   - Database name: `ui-gen-db`, version: 3 (upgraded from 2 to add pendingPrompt store)
   - Object stores:
     - `screens` with key `"all"` storing array of ScreenData
     - `viewportTransform` with key `"current"` storing ViewportTransform
     - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
+  - `initializeStorage(email)` function creates `YjsStorage` instance with project ID derived from email hash
   - Auto-saves screens whenever they change (debounced by 300ms to prevent race conditions)
   - Auto-saves viewport transform with 500ms debounce
   - Auto-loads screens and viewport transform on mount
@@ -570,3 +588,10 @@ interface PromptPanelProps {
 - 2025-03-29: Added server-side state vector tracking + shared hydration helper with deduped promises so server docs preload from Prisma exactly once, cache their state vector, and skip redundant persistence when clients reconnect.
 - 2025-03-30: Read through README.md and docs to refresh high-level architecture/context per user request; ready for follow-up tasks.
 - 2025-03-30: Added fixed sync-status indicator (react-icons) wired to new Yjs provider status snapshots/retry hook so users can see offline/syncing/synced/error states with tooltip + manual retry that isn't affected by viewport transforms.
+- 2025-03-30: Fixed PromptPanel bug where clicking Create/Modify buttons caused screen to unselect - added event propagation prevention to panel container and all interactive buttons to prevent clicks from bubbling to viewport.
+- 2025-03-30: Changed project ID from `session.user.id` to hash of `session.user.email` to ensure same user on different browsers has consistent ID. Created `src/lib/project-id.ts` with `getProjectIdFromEmail()` and `getProjectIdFromEmailSync()` functions using SHA-256 hash. Updated all API routes and client-side storage initialization to use email-based project IDs.
+- 2025-03-30: Added comprehensive logging for debugging Yjs updates - logs project IDs, state vectors, screen data changes, and update origins throughout the system.
+- 2025-03-30: Fixed feedback loop issue where server updates triggered client updates - added `isProcessingServerUpdate` flag in `YjsProvider` that prevents syncing to Yjs when server updates are being processed. Flag is set for 500ms after server updates to allow React to finish processing.
+- 2025-03-30: Implemented incremental updates for Yjs screens - created `updateYjsScreen()` function that only updates changed fields and conversation points, preventing entire objects from being dropped and re-inserted. This reduces update size and improves performance.
+- 2025-03-30: Fixed storage initialization to wait for session to load before initializing Yjs - prevents initializing with `email: null` and then re-initializing with actual email. Added check in `page.tsx` useEffect to return early if session is undefined.
+- 2025-03-30: Added position change detection in `handleScreenUpdate` to prevent redundant updates - checks if position actually changed in Yjs before syncing position-only updates, avoiding no-op updates that don't change the state vector.

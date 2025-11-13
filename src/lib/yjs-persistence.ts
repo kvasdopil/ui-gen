@@ -10,10 +10,14 @@ type ConversationPointArrow = {
 };
 
 export async function persistYDocToDatabase(projectId: string, doc: Y.Doc): Promise<void> {
+  console.log("[Persistence] persistYDocToDatabase called", { projectId });
   const screensMap = doc.getMap("screens") as Y.Map<Y.Map<unknown>>;
+  const screenCount = screensMap.size;
+  console.log("[Persistence] Persisting screens map", { projectId, screenCount });
   await persistScreensMap(projectId, screensMap);
   const vector = Buffer.from(Y.encodeStateVector(doc)).toString("base64");
   setDocStateVector(projectId, vector);
+  console.log("[Persistence] Successfully persisted YDoc to database", { projectId, screenCount });
 }
 
 export async function persistScreensMap(

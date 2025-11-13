@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import { setDocStateVector } from "@/lib/server-yjs-docs";
 import { getHydratedProjectDoc } from "@/lib/yjs-server-loader";
 import { persistScreensMap } from "@/lib/yjs-persistence";
+import { getProjectIdFromEmail } from "@/lib/project-id";
 
 // This endpoint handles Yjs document updates
 // For real-time WebSocket support, a separate WebSocket server is needed
@@ -12,12 +13,13 @@ import { persistScreensMap } from "@/lib/yjs-persistence";
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const { update } = await request.json();
-    const projectId = session.user.id;
+    const projectId = await getProjectIdFromEmail(session.user.email);
+    console.log("[API] /api/yjs/sync - Using project ID", { projectId, email: session.user.email });
 
     if (!update) {
       return NextResponse.json({ error: "Missing update" }, { status: 400 });

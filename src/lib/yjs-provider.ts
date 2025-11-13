@@ -39,6 +39,7 @@ class YjsProvider {
   private stateSyncPromise: Promise<void> | null = null;
   private lastError: string | null = null;
   public isProcessingServerUpdate = false; // Exposed to allow clients to check if server update is in progress
+  private serverUpdateTimeout: number | null = null; // Track timeout to clear it if needed
   private statusSnapshot: YjsStatusSnapshot = {
     syncState: "offline",
     connectionState: "disconnected",
@@ -198,16 +199,25 @@ class YjsProvider {
           // Set flag to indicate we're processing a server update
           // This will be checked by clients to prevent feedback loops
           this.isProcessingServerUpdate = true;
+          // Clear any existing timeout
+          if (this.serverUpdateTimeout !== null && typeof window !== "undefined") {
+            window.clearTimeout(this.serverUpdateTimeout);
+          }
           Y.applyUpdate(this.doc, update, "sse");
           if (!this.hasReceivedInitialState) {
             this.hasReceivedInitialState = true;
             console.log("[Yjs] Received initial state, flushing offline queue");
             void this.flushOfflineQueue();
           }
-          // Reset flag after a short delay to allow React to finish processing
-          setTimeout(() => {
-            this.isProcessingServerUpdate = false;
-          }, 100);
+          // Reset flag after a longer delay to allow React to finish processing
+          // Increased to 500ms to handle multiple updates and React re-renders
+          if (typeof window !== "undefined") {
+            this.serverUpdateTimeout = window.setTimeout(() => {
+              this.isProcessingServerUpdate = false;
+              this.serverUpdateTimeout = null;
+              console.log("[Yjs] Server update processing flag reset");
+            }, 500);
+          }
           this.updateStatus();
         } catch (error) {
           console.error("Error applying Yjs update from SSE:", error);
@@ -319,11 +329,20 @@ class YjsProvider {
             });
             // Set flag to indicate we're processing a server update
             this.isProcessingServerUpdate = true;
+            // Clear any existing timeout
+            if (this.serverUpdateTimeout !== null && typeof window !== "undefined") {
+              window.clearTimeout(this.serverUpdateTimeout);
+            }
             Y.applyUpdate(this.doc, update, "server-sync");
-            // Reset flag after a short delay to allow React to finish processing
-            setTimeout(() => {
-              this.isProcessingServerUpdate = false;
-            }, 100);
+            // Reset flag after a longer delay to allow React to finish processing
+            // Increased to 500ms to handle multiple updates and React re-renders
+            if (typeof window !== "undefined") {
+              this.serverUpdateTimeout = window.setTimeout(() => {
+                this.isProcessingServerUpdate = false;
+                this.serverUpdateTimeout = null;
+                console.log("[Yjs] Server update processing flag reset (server-sync)");
+              }, 500);
+            }
           } else {
             console.log("[Yjs] Server-sync returned empty update");
           }
@@ -593,6 +612,94 @@ export function screenDataToYjs(screenData: {
   yScreen.set("conversationPoints", yConversationPoints);
 
   return yScreen;
+}
+
+// Update existing Yjs screen with only the fields that changed
+export function updateYjsScreen(
+  yScreen: Y.Map<unknown>,
+  updates: {
+    position?: { x: number; y: number } | null;
+    height?: number | null;
+    selectedPromptIndex?: number | null;
+    conversationPoints?: Array<{
+      prompt: string;
+      html: string;
+      title: string | null;
+      timestamp: number;
+      arrows?: Array<{
+        overlayIndex: number;
+        targetScreenId: string;
+        startPoint?: { x: number; y: number };
+      }>;
+    }>;
+  },
+): void {
+  // Update simple fields
+  if (updates.position !== undefined) {
+    yScreen.set("position", updates.position || null);
+  }
+  if (updates.height !== undefined) {
+    yScreen.set("height", updates.height || null);
+  }
+  if (updates.selectedPromptIndex !== undefined) {
+    yScreen.set("selectedPromptIndex", updates.selectedPromptIndex ?? null);
+  }
+
+  // Update conversation points incrementally
+  if (updates.conversationPoints !== undefined) {
+    const yConversationPoints = yScreen.get("conversationPoints") as Y.Array<Y.Map<unknown>>;
+    const newPoints = updates.conversationPoints;
+
+    // Build a map of existing points by timestamp for quick lookup
+    const existingPointsByTimestamp = new Map<number, { index: number; yPoint: Y.Map<unknown> }>();
+    yConversationPoints.forEach((yPoint, index) => {
+      const timestamp = yPoint.get("timestamp") as number;
+      existingPointsByTimestamp.set(timestamp, { index, yPoint });
+    });
+
+    // Track which timestamps we've seen in the new array
+    const seenTimestamps = new Set<number>();
+
+    // Update or insert points
+    newPoints.forEach((newPoint, newIndex) => {
+      const timestamp = newPoint.timestamp;
+      seenTimestamps.add(timestamp);
+
+      const existing = existingPointsByTimestamp.get(timestamp);
+      if (existing) {
+        // Update existing point
+        const yPoint = existing.yPoint;
+        yPoint.set("prompt", newPoint.prompt);
+        yPoint.set("html", newPoint.html);
+        yPoint.set("title", newPoint.title || null);
+        yPoint.set("arrows", newPoint.arrows || []);
+        // Note: timestamp doesn't change, so we don't update it
+      } else {
+        // Insert new point at the correct position
+        const yPoint = new Y.Map();
+        yPoint.set("prompt", newPoint.prompt);
+        yPoint.set("html", newPoint.html);
+        yPoint.set("title", newPoint.title || null);
+        yPoint.set("timestamp", newPoint.timestamp);
+        yPoint.set("arrows", newPoint.arrows || []);
+        yConversationPoints.insert(newIndex, [yPoint]);
+      }
+    });
+
+    // Remove points that are no longer in the new array
+    // We need to iterate backwards to avoid index shifting issues
+    const toRemove: number[] = [];
+    yConversationPoints.forEach((yPoint, index) => {
+      const timestamp = yPoint.get("timestamp") as number;
+      if (!seenTimestamps.has(timestamp)) {
+        toRemove.push(index);
+      }
+    });
+    // Remove from highest index to lowest to avoid index shifting
+    toRemove.sort((a, b) => b - a).forEach((index) => {
+      yConversationPoints.delete(index, 1);
+    });
+  }
 }
 
 export function yjsToScreenData(yScreen: Y.Map<unknown>): {

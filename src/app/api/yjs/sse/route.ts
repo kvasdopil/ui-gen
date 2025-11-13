@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/app/api/auth/[...nextauth]/route";
 import * as Y from "yjs";
 import { getHydratedProjectDoc } from "@/lib/yjs-server-loader";
+import { getProjectIdFromEmail } from "@/lib/project-id";
 
 const projectClients = new Map<string, Set<ReadableStreamDefaultController>>();
 
@@ -22,11 +23,12 @@ function broadcastUpdate(projectId: string, update: Uint8Array): void {
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const projectId = session.user.id;
+    const projectId = await getProjectIdFromEmail(session.user.email);
+    console.log("[API] /api/yjs/sse - Using project ID", { projectId, email: session.user.email });
     const doc = await getHydratedProjectDoc(projectId);
 
     const stream = new ReadableStream({

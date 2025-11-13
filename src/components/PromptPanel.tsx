@@ -59,7 +59,11 @@ export default function PromptPanel({
     // Don't clear editValue - preserve any previously entered text
   };
 
-  const handleCreate = () => {
+  const handleCreate = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!editValue.trim()) return;
     onSend(editValue);
     setIsEditing(false);
@@ -145,7 +149,11 @@ ${html}`;
   };
 
   return (
-    <div className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-x-visible overflow-y-auto">
+    <div
+      className="absolute left-full z-10 ml-2 max-h-[844px] w-64 overflow-x-visible overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       <div className="flex flex-col gap-2">
         {/* Display all conversation points (prompts) */}
         {conversationPoints.map((point, index) => {
@@ -241,7 +249,7 @@ ${html}`;
               disabled={isLoading}
             />
             <Button
-              onClick={handleCreate}
+              onClick={(e) => handleCreate(e)}
               disabled={isLoading || !editValue.trim()}
               className="flex items-center justify-center gap-2 text-xs"
             >
@@ -251,7 +259,10 @@ ${html}`;
           </div>
         ) : (
           <Button
-            onClick={handleModify}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleModify();
+            }}
             disabled={isLoading}
             variant="ghost"
             size="sm"

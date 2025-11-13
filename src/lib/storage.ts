@@ -1,6 +1,7 @@
 import { openDB, DBSchema, IDBPDatabase } from "idb";
 import type { ScreenData } from "./types";
 import { getYjsProvider, screenDataToYjs, yjsToScreenData } from "./yjs-provider";
+import { getProjectIdFromEmailSync } from "./project-id";
 import * as Y from "yjs";
 
 export type ViewportTransform = {
@@ -220,9 +221,9 @@ class IdbStorage implements Storage {
 }
 
 // Yjs-integrated storage that syncs screens via Yjs while keeping IndexedDB for offline support
-class YjsStorage implements Storage {
+export class YjsStorage implements Storage {
   public idbStorage: IdbStorage;
-  private projectId: string;
+  public projectId: string;
   private userId?: string;
   private sseUrl?: string;
   private yjsProvider: ReturnType<typeof getYjsProvider> | null = null;
@@ -420,11 +421,50 @@ class YjsStorage implements Storage {
   }
 }
 
-// Export default storage instance
-// For now, use YjsStorage with default project
-// In the future, this could be initialized with user session info
 // SSE URL defaults to /api/yjs/sse if not specified
 const sseUrl =
   typeof window !== "undefined" ? process.env.NEXT_PUBLIC_YJS_SSE_URL || "/api/yjs/sse" : undefined;
 
-export const storage: Storage = new YjsStorage("default", undefined, sseUrl);
+// Default storage instance (will be replaced when session is available)
+let defaultStorage: Storage = new YjsStorage("default", undefined, sseUrl);
+
+// Function to get or create storage instance for a user's email
+export function getStorageForEmail(email: string | null | undefined): Storage {
+  if (typeof window === "undefined") {
+    return defaultStorage;
+  }
+
+  // Import here to avoid circular dependencies and ensure it's only used on client
+  import("./project-id").then(({ getProjectIdFromEmailSync }) => {
+    const projectId = getProjectIdFromEmailSync(email);
+    if (defaultStorage instanceof YjsStorage && defaultStorage.projectId !== projectId) {
+      // If email changed, create new storage instance
+      defaultStorage = new YjsStorage(projectId, undefined, sseUrl);
+    }
+  });
+
+  // For now, return default storage - it will be updated asynchronously
+  // The actual projectId will be set when YjsStorage initializes
+  return defaultStorage;
+}
+
+// Function to initialize storage with user email
+export function initializeStorage(email: string | null | undefined): Storage {
+  const projectId = getProjectIdFromEmailSync(email);
+  console.log("[Storage] Initializing storage", {
+    email: email ? email.toLowerCase().trim() : null,
+    projectId,
+    existingProjectId: defaultStorage instanceof YjsStorage ? defaultStorage.projectId : "N/A",
+  });
+  if (defaultStorage instanceof YjsStorage && defaultStorage.projectId === projectId) {
+    console.log("[Storage] Using existing storage instance");
+    return defaultStorage;
+  }
+  console.log("[Storage] Creating new storage instance");
+  defaultStorage = new YjsStorage(projectId, undefined, sseUrl);
+  return defaultStorage;
+}
+
+// Export default storage instance
+// This will be updated when user session is available
+export const storage: Storage = defaultStorage;

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
+import { getProjectIdFromEmailSync } from "@/lib/project-id";
 import Screen from "@/components/Screen";
 import SyncStatusIndicator from "@/components/SyncStatusIndicator";
 import UserAvatar from "@/components/UserAvatar";
@@ -11,11 +12,12 @@ import ArrowLine from "@/components/ArrowLine";
 import Viewport, { type ViewportHandle } from "@/components/Viewport";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ScreenData, ConversationPointArrow } from "@/lib/types";
-import { storage } from "@/lib/storage";
+import { storage, initializeStorage, YjsStorage } from "@/lib/storage";
 import type { Storage as StorageInterface } from "@/lib/storage";
 import {
   screenDataToYjs,
   yjsToScreenData,
+  updateYjsScreen,
   type YjsStatusSnapshot,
   type YjsProviderInstance,
 } from "@/lib/yjs-provider";
@@ -37,7 +39,7 @@ type StorageWithInternals = StorageInterface & {
 const enhancedStorage = storage as StorageWithInternals;
 
 export default function Home() {
-  useSession(); // Keep for auth initialization
+  const { data: session } = useSession();
   const [screens, setScreens] = useState<ScreenData[]>([]);
   const [isLoadingScreens, setIsLoadingScreens] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
@@ -367,14 +369,23 @@ export default function Home() {
               (point) => point.html && point.html.trim().length > 0,
             )
           ) {
+            const existingScreen = yjsScreensMap.get(draggedScreenId);
+            const existingPosition = existingScreen
+              ? (existingScreen.get("position") as { x: number; y: number } | null)
+              : null;
+            const newPosition = draggedScreen.position || null;
+            
             console.log("[Page] Drag completion: syncing to Yjs with user-action", {
               screenId: draggedScreenId,
+              existingPosition,
+              newPosition,
+              positionChanged: JSON.stringify(existingPosition) !== JSON.stringify(newPosition),
               stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
             });
+            
             yjsScreensMap.doc.transact(() => {
-              const existingScreen = yjsScreensMap.get(draggedScreenId);
               if (existingScreen) {
-                existingScreen.set("position", draggedScreen.position || null);
+                existingScreen.set("position", newPosition);
               } else {
                 const yScreen = screenDataToYjs(draggedScreen);
                 yjsScreensMap.set(draggedScreenId, yScreen);
@@ -661,8 +672,51 @@ export default function Home() {
           // Sync to Yjs
           // - Always sync position updates (even for incomplete screens)
           // - Only sync conversation points if screen has completed points
-          if (
-            !isPositionOnlyUpdate &&
+          // For position-only updates, check if position actually changed before syncing
+          if (isPositionOnlyUpdate) {
+            // For position updates, check if position actually changed in Yjs
+            if (
+              yjsScreensMapRef.current &&
+              isYjsInitializedRef.current &&
+              yjsScreensMapRef.current.doc
+            ) {
+              const existingYScreen = yjsScreensMapRef.current.get(screenId) as
+                | Y.Map<unknown>
+                | undefined;
+              if (existingYScreen) {
+                const existingPosition = existingYScreen.get("position") as
+                  | { x: number; y: number }
+                  | null;
+                const positionChanged =
+                  JSON.stringify(existingPosition) !== JSON.stringify(updatedScreen.position);
+                if (!positionChanged) {
+                  console.log("[Page] handleScreenUpdate: position unchanged, skipping Yjs sync", {
+                    screenId,
+                    position: updatedScreen.position,
+                  });
+                  return updatedScreen;
+                }
+              }
+              // Position changed or screen doesn't exist yet, sync it
+              yjsScreensMapRef.current.doc.transact(() => {
+                const existingYScreen = yjsScreensMapRef.current!.get(screenId) as
+                  | Y.Map<unknown>
+                  | undefined;
+                if (existingYScreen) {
+                  existingYScreen.set("position", updatedScreen.position || null);
+                } else {
+                  // Screen doesn't exist, create it with just position
+                  const yScreen = new Y.Map();
+                  yScreen.set("id", screenId);
+                  yScreen.set("position", updatedScreen.position || null);
+                  yScreen.set("height", null);
+                  yScreen.set("selectedPromptIndex", null);
+                  yScreen.set("conversationPoints", new Y.Array());
+                  yjsScreensMapRef.current!.set(screenId, yScreen);
+                }
+              }, "user-action");
+            }
+          } else if (
             yjsScreensMapRef.current &&
             isYjsInitializedRef.current &&
             yjsScreensMapRef.current.doc
@@ -672,13 +726,86 @@ export default function Home() {
             );
 
             if (hasCompletedPoints) {
+              // Check if selectedPromptIndex is being updated and if it actually changed
+              if (updates.selectedPromptIndex !== undefined) {
+                const existingYScreen = yjsScreensMapRef.current.get(screenId) as
+                  | Y.Map<unknown>
+                  | undefined;
+                if (existingYScreen) {
+                  const existingSelectedIndex = existingYScreen.get("selectedPromptIndex") as number | null | undefined;
+                  const newSelectedIndex = updatedScreen.selectedPromptIndex ?? null;
+                  const selectedIndexChanged = existingSelectedIndex !== newSelectedIndex;
+                  
+                  if (!selectedIndexChanged) {
+                    console.log("[Page] handleScreenUpdate: selectedPromptIndex unchanged, skipping Yjs sync", {
+                      screenId,
+                      selectedPromptIndex: newSelectedIndex,
+                      updateKeys: Object.keys(updates),
+                    });
+                    // If it's ONLY selectedPromptIndex that's unchanged, skip entirely
+                    // Otherwise, continue with other updates
+                    if (updateKeys.length === 1 && updateKeys[0] === "selectedPromptIndex") {
+                      return updatedScreen;
+                    }
+                    // If there are other updates, continue but don't include selectedPromptIndex
+                  }
+                }
+              }
+
               console.log("[Page] Update screen: syncing to Yjs with user-action", {
                 screenId,
+                updateKeys: Object.keys(updates),
                 stackTrace: new Error().stack?.split("\n").slice(1, 8).join("\n"),
               });
               yjsScreensMapRef.current.doc.transact(() => {
-                const yScreen = screenDataToYjs(updatedScreen);
-                yjsScreensMapRef.current!.set(screenId, yScreen);
+                const existingYScreen = yjsScreensMapRef.current!.get(screenId) as
+                  | Y.Map<unknown>
+                  | undefined;
+
+                if (existingYScreen) {
+                  // Update existing screen incrementally
+                  const updateData: {
+                    position?: { x: number; y: number } | null;
+                    height?: number | null;
+                    selectedPromptIndex?: number | null;
+                    conversationPoints?: typeof updatedScreen.conversationPoints;
+                  } = {};
+
+                  if (updates.position !== undefined) {
+                    updateData.position = updatedScreen.position || null;
+                  }
+                  if (updates.height !== undefined) {
+                    updateData.height = updatedScreen.height ?? null;
+                  }
+                  if (updates.selectedPromptIndex !== undefined) {
+                    const existingSelectedIndex = existingYScreen.get("selectedPromptIndex") as number | null | undefined;
+                    const newSelectedIndex = updatedScreen.selectedPromptIndex ?? null;
+                    // Only include in update if it actually changed
+                    if (existingSelectedIndex !== newSelectedIndex) {
+                      updateData.selectedPromptIndex = newSelectedIndex;
+                      console.log("[Page] handleScreenUpdate: updating selectedPromptIndex", {
+                        screenId,
+                        existingSelectedIndex,
+                        newSelectedIndex,
+                        changed: true,
+                      });
+                    } else {
+                      console.log("[Page] handleScreenUpdate: selectedPromptIndex unchanged in transact, skipping", {
+                        screenId,
+                        selectedPromptIndex: newSelectedIndex,
+                      });
+                    }
+                  }
+                  if (updates.conversationPoints !== undefined) {
+                    updateData.conversationPoints = updatedScreen.conversationPoints;
+                  }
+
+                  updateYjsScreen(existingYScreen, updateData);
+                } else {
+                  // Screen doesn't exist yet, create it
+                  const yScreen = screenDataToYjs(updatedScreen);
+                  yjsScreensMapRef.current!.set(screenId, yScreen);
+                }
               }, "user-action");
             } else {
               yjsScreensMapRef.current.delete(screenId);
@@ -863,12 +990,22 @@ export default function Home() {
 
   // Initialize Yjs and load screens from storage on mount
   useEffect(() => {
+    // Don't initialize until session is loaded (email is available)
+    if (session === undefined) {
+      // Session is still loading
+      return;
+    }
+
     const loadData = async () => {
       try {
+        // Update storage with project ID based on user email
+        const email = session?.user?.email;
+        const currentStorage = initializeStorage(email);
+        
         // Get Yjs provider from storage (await initialization)
         // Check if storage has getYjsProvider method (YjsStorage instance)
-        if (typeof enhancedStorage.getYjsProvider === "function") {
-          const yjsProvider = await enhancedStorage.getYjsProvider();
+        if (typeof currentStorage.getYjsProvider === "function") {
+          const yjsProvider = await currentStorage.getYjsProvider();
           if (yjsProvider) {
             yjsProviderRef.current = yjsProvider;
             const unsubscribeStatus = yjsProvider.onStatusChange((snapshot: YjsStatusSnapshot) => {
@@ -921,7 +1058,8 @@ export default function Home() {
                     JSON.stringify(currentScreen.position) !== JSON.stringify(yjsScreen.position) ||
                     JSON.stringify(currentScreen.conversationPoints) !==
                       JSON.stringify(yjsScreen.conversationPoints) ||
-                    currentScreen.height !== yjsScreen.height
+                    currentScreen.height !== yjsScreen.height ||
+                    currentScreen.selectedPromptIndex !== yjsScreen.selectedPromptIndex
                   );
                 }) ||
                 currentScreens.some((currentScreen) => {
@@ -967,7 +1105,7 @@ export default function Home() {
             yjsProviderRef.current = null;
             setSyncStatus(null);
             // Fallback: load from IndexedDB only
-            const loadedScreens = await storage.loadScreens();
+            const loadedScreens = await currentStorage.loadScreens();
             if (loadedScreens.length > 0) {
               setScreens(loadedScreens);
             }
@@ -980,7 +1118,7 @@ export default function Home() {
           yjsProviderRef.current = null;
           setSyncStatus(null);
           // Fallback: load from IndexedDB only
-          const loadedScreens = await storage.loadScreens();
+          const loadedScreens = await currentStorage.loadScreens();
           if (loadedScreens.length > 0) {
             setScreens(loadedScreens);
           }
@@ -1010,7 +1148,7 @@ export default function Home() {
     };
 
     loadData();
-  }, []);
+  }, [session?.user?.email]);
 
   // Save screens to IndexedDB whenever they change (debounced to prevent race conditions)
   // Note: Yjs sync happens directly in screen operations, this is just for IndexedDB backup

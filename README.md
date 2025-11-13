@@ -97,6 +97,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want** the new screen form to close when I select a screen, **so that** the form doesn't stay visible when I'm working with existing screens
 - **As a** user, **I want to** create new screens that are positioned at the form location, **so that** I can organize screens spatially
 - **As a** user, **I want to** see a prompt history panel appear when I select a screen, **so that** I can see my conversation history
+- **As a** user, **I want** the prompt panel to remain visible when I click buttons within it (Create, Modify), **so that** the screen stays selected and I can continue working without interruption
 - **As a** user, **I want to** see all my previous prompts displayed as read-only text in the history panel, **so that** I can reference my conversation history
 - **As a** user, **I want to** click any prompt in the history panel, **so that** I can view the LLM output that was generated for that prompt
 - **As a** user, **I want to** see which prompt is currently selected with visual highlighting, **so that** I know which output I'm viewing
@@ -596,38 +597,52 @@ The `/api/create` endpoint:
 
 ### High-Level Flow
 
-1. **Client-side doc** (`src/lib/yjs-provider.ts`):
+1. **Project ID Generation** (`src/lib/project-id.ts`):
+   - Project IDs are derived from user email using SHA-256 hash (first 16 characters)
+   - Ensures the same user on different browsers/devices uses the same project ID
+   - Provides consistency across sessions while maintaining privacy (email is hashed, not stored directly)
+2. **Client-side doc** (`src/lib/yjs-provider.ts`):
    - Creates a Yjs `Doc` per project, persists it locally with `y-indexeddb`, and listens for browser online/offline events.
    - Every user action in `src/app/page.tsx` (create, drag, clone, delete, prompt updates) writes to the doc with the `"user-action"` origin so only intentional mutations are sent upstream.
-2. **SSE downlink** (`/api/yjs/sse`):
+   - Implements `isProcessingServerUpdate` flag to prevent feedback loops when server updates are being applied
+   - Uses incremental updates (`updateYjsScreen`) to only update changed fields, preventing unnecessary full object replacements
+3. **SSE downlink** (`/api/yjs/sse`):
    - The browser opens a Server-Sent Events stream (defaults to `/api/yjs/sse`, override with `NEXT_PUBLIC_YJS_SSE_URL`).
-   - The API keeps an in-memory doc per project, loads the latest Prisma snapshot on first subscriber, and broadcasts Yjs updates to all connected clients.
-3. **Update uplink** (`/api/yjs/update`):
+   - The API keeps an in-memory doc per project (identified by email hash), loads the latest Prisma snapshot on first subscriber, and broadcasts Yjs updates to all connected clients.
+4. **Update uplink** (`/api/yjs/update`):
    - The client batches local updates, encodes them as base64, and POSTs them.
    - The server applies the update with `"http"` origin so it is not echoed back to the sender, then fans it out to other listeners.
-4. **Database sync**:
+   - Skips persistence if state vector is unchanged (update was redundant/no-op)
+5. **Database sync**:
    - After each update the server persists the canonical doc to Postgres (see `prisma/migrations/20251112204240_init/migration.sql`).
    - `/api/yjs/sync` is available for manual reconciliation jobs that send a full Yjs state vector.
-5. **Cold start load** (`/api/projects/[id]`):
+6. **Cold start load** (`/api/projects/[id]`):
    - When a client lacks IndexedDB data it can hit this route to hydrate `ScreenData[]` plus the project metadata before connecting to Yjs.
+   - Project ID is derived from user email hash, not from route parameter
 
 ### Client Integration
 
 - `src/lib/storage.ts` now exports a `YjsStorage` wrapper:
-  - Bootstraps Yjs, replays IndexedDB state into the doc if the server doc is empty, and exposes helper getters (`getYjsProvider`, `getScreensMap`).
+  - Bootstraps Yjs with project ID derived from user email hash via `initializeStorage(email)`
+  - Replays IndexedDB state into the doc if the server doc is empty, and exposes helper getters (`getYjsProvider`, `getScreensMap`).
   - Keeps IndexedDB as a local backup while letting the live Yjs doc drive the source of truth.
   - Only syncs screens that contain completed conversation points to avoid persisting empty shells.
+  - Waits for session to load before initializing to ensure correct project ID
 - `src/app/page.tsx` keeps React state aligned with the shared doc by:
   - Mirroring every CRUD operation through `screenDataToYjs` / `yjsToScreenData`.
+  - Using incremental updates (`updateYjsScreen`) to only update changed fields, preventing full object replacements
+  - Checking `isProcessingServerUpdate` flag before syncing to Yjs to prevent feedback loops
+  - Checking if position actually changed before syncing position-only updates to avoid redundant updates
   - Observing the Yjs map so remote edits, other browser tabs, or teammates appear instantly.
   - Debouncing IndexedDB writes to prevent feedback loops (Yjs handles cross-client sync; IndexedDB is only a resilience layer).
 
 ### Server Endpoints & Files
 
-- `src/app/api/yjs/sse/route.ts`: Authenticated SSE stream, document bootstrap from Prisma, fan-out to connected browsers.
-- `src/app/api/yjs/update/route.ts`: Receives base64 updates, applies them to the in-memory doc, and triggers asynchronous Prisma persistence.
-- `src/app/api/yjs/sync/route.ts`: Accepts a full Yjs update payload for manual reconciliation or admin tooling.
-- `src/app/api/projects/[id]/route.ts`: Fetches a project plus all screens/conversation points (ordered) for first-load hydration.
+- `src/app/api/yjs/sse/route.ts`: Authenticated SSE stream, document bootstrap from Prisma, fan-out to connected browsers. Uses email hash as project ID.
+- `src/app/api/yjs/update/route.ts`: Receives base64 updates, applies them to the in-memory doc, and triggers asynchronous Prisma persistence. Skips persistence if state vector is unchanged. Uses email hash as project ID.
+- `src/app/api/yjs/sync/route.ts`: Accepts a full Yjs update payload for manual reconciliation or admin tooling. Uses email hash as project ID.
+- `src/app/api/yjs/state/route.ts`: Returns state vector diff for client synchronization. Uses email hash as project ID.
+- `src/app/api/projects/[id]/route.ts`: Fetches a project plus all screens/conversation points (ordered) for first-load hydration. Uses email hash as project ID (route parameter ignored).
 
 ### Database Schema
 

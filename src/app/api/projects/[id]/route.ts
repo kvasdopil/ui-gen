@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
 import type { ScreenData } from "@/lib/types";
+import { getProjectIdFromEmail } from "@/lib/project-id";
 
 export async function GET(_request: NextRequest, _context: { params: Promise<{ id: string }> }) {
   try {
     void _request;
     void _context;
     const session = await auth();
-    if (!session?.user?.id) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const projectId = session.user.id;
+    const projectId = await getProjectIdFromEmail(session.user.email);
+    console.log("[API] /api/projects/[id] - Using project ID", { projectId, email: session.user.email });
 
     // Get or create project
     let project = await prisma.project.findUnique({

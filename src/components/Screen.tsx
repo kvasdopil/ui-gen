@@ -608,6 +608,12 @@ export default function Screen({
   // Handle prompt selection - display the corresponding conversation point
   const handlePromptSelect = (pointIndex: number) => {
     if (pointIndex >= 0 && pointIndex < conversationPoints.length) {
+      console.log("[Screen] handlePromptSelect called", {
+        screenId: id,
+        pointIndex,
+        currentSelectedIndex: selectedPromptIndex,
+        willChange: selectedPromptIndex !== pointIndex,
+      });
       setSelectedPromptIndex(pointIndex);
 
       // Update screen data
