@@ -807,6 +807,7 @@ export default function Screen({
                       <div
                         key={index}
                         className="absolute cursor-crosshair border-2"
+                        data-overlay-highlight
                         style={{
                           left: `${highlight.x}px`,
                           top: `${highlight.y}px`,
@@ -818,7 +819,7 @@ export default function Screen({
                               ? "rgba(255, 0, 255, 0.1)"
                               : "rgba(0, 255, 255, 0.1)", // semi-transparent fill
                           boxSizing: "border-box",
-                          pointerEvents: "none",
+                          pointerEvents: "auto",
                         }}
                         onMouseDown={handleMouseDown}
                       />

@@ -33,13 +33,13 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
 - 🎨 **Visual Selection**: Screens have a transparent border by default, display a 2px solid blue border when selected, and show a 2px solid blue border on hover when not selected
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
-- 🖱️ **Draggable Screens**: Drag unselected screens to reposition them; panning is disabled during screen drag
+- 🖱️ **Draggable Screens**: Drag any screen (selected or unselected) to reposition them; panning is disabled during screen drag
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
 - 🚫 **Non-Interactive Screens**: Screen contents (iframe and overlays) are always non-interactive to prevent accidental clicks while navigating
 - 🖱️ **Double-Click to Activate**: Double-click any screen to activate it, center the camera, and zoom to 100%
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
-- ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom
+- ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom; clicking on touchable overlays starts link creation instead of dragging the screen
 - 💾 **Persistent Arrows**: Arrows are stored with conversation entry metadata (along with HTML) - each arrow is identified by clickable index and contains target screen ID, automatically saved and restored
 - 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
 
@@ -384,7 +384,7 @@ yarn dev
 ### Creating Arrow Connections
 
 1. **Enable Clickable Highlights**: Click the hand icon next to a screen's title to show clickable overlays
-2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow
+2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow - this will NOT drag the screen, it will start link creation instead
 3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor
 4. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
 5. **Cancel**: Release the mouse button outside of any screen to cancel arrow creation
@@ -395,6 +395,7 @@ yarn dev
 10. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
 11. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
 12. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
+13. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
 
 ### Example Prompts
 
@@ -516,7 +517,9 @@ The `/api/create` endpoint:
   - **Height Persistence**: Screen height is stored in `ScreenData.height` and used for accurate arrow boundary detection
   - Renders generated UI in iframe based on selected conversation point
   - Extracts and displays screen title from HTML metadata (`<!-- Title: ... -->`) above the screen
-  - **Non-Interactive Content**: Iframe and overlay highlights are always non-interactive (`pointerEvents: "none"`) to prevent accidental clicks while navigating
+  - **Non-Interactive Content**: Iframe is non-interactive (`pointerEvents: "none"`) to prevent accidental clicks while navigating
+  - **Clickable Overlays**: Overlay highlights have `pointerEvents: "auto"` and `data-overlay-highlight` attribute to receive clicks for arrow creation
+  - **Overlay Click Detection**: Screen drag handler checks for overlay clicks and skips dragging if click is on overlay element
   - **Double-Click Handler**: Double-clicking a screen activates it, centers the camera, and zooms to 100% - works for both selected and unselected screens
   - **Selection Prevention**: Prevents text/element selection on double-click using CSS `user-select: none` and event prevention
   - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
@@ -575,6 +578,7 @@ The `/api/create` endpoint:
   - Provides confirmation dialog before deleting entries
   - Provides "Modify" button to enter modification mode
   - Shows modification input field with "Create" button when in edit mode
+  - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` to prevent blur event from dismissing the panel when textarea is focused
   - Preserves entered text when dismissing the modify form (text remains when clicking "Modify" again)
   - Handles canceling edit mode when input field loses focus and is empty
   - Only visible when parent screen is selected
@@ -711,9 +715,9 @@ These can be adjusted in `src/app/api/create/route.ts`
 - Generated HTML is sanitized but should be reviewed for production use
 - Screen size is fixed at 390px × 844px (mobile only)
 - Zoom is limited to 10% to 100% scale with smooth performance (no jitter)
-- Unselected screens can be dragged to reposition them
+- All screens (selected and unselected) can be dragged to reposition them
 - Panning is automatically disabled when dragging a screen
-- Selected screens are non-draggable to allow interaction with their content
+- Clicking on touchable overlays starts link creation instead of dragging the screen
 - Camera position and zoom are persisted and restored on page reload
 - New screen form appears on mouse release (not mouse down) to prevent accidental triggers while dragging
 - Double-click any screen to activate it, center the camera, and zoom to 100%

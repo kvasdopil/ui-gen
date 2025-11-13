@@ -19,6 +19,7 @@ interface ViewportProps {
   onPanEnd?: () => void;
   onTransformChange?: (transform: ViewportTransform) => void;
   disabled?: boolean; // When true, panning is disabled (e.g., when dragging a screen)
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
@@ -28,6 +29,7 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
     onPanEnd,
     onTransformChange,
     disabled = false,
+    onContextMenu,
   },
   ref,
 ) {
@@ -235,6 +237,7 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onContextMenu={onContextMenu}
       style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
       <div

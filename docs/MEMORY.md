@@ -72,32 +72,40 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 9. Screen Creation Flow
 
-- **Decision**: No auto-selection or auto-centering when creating screens
-- **Reason**: Prevents viewport disruption when creating multiple screens quickly
+- **Decision**: Right-click on viewport to create new screens, popups rendered outside viewport to avoid transform effects
+- **Reason**: Prevents viewport disruption when creating multiple screens quickly; popups should not be affected by pan/zoom
 - **Z-Index**: Newer screens appear above older ones; selected screens always on top
-- **Two-Click Behavior**: First click on empty space deselects current screen, second click (when no screen selected) shows initial popup
-- **Two-Step Flow**:
-  1. First shows `CreateScreenPopup` component with "Create screen" title and "Mobile app" button
-  2. Clicking "Mobile app" button shows the "What you want to create" dialog form
+- **Right-Click Flow**:
+  1. Right-click on empty space (not on screens) shows `CreateScreenPopup` component
+  2. Popup appears at right-click location with "Create screen" title and "Mobile app" button
+  3. Clicking "Mobile app" button shows the "What you want to create" dialog form
 - **Implementation**:
-  - Track `hadSelectedScreen` in `handleMouseDown` to determine if popup should appear
-  - Use `isCreateScreenPopupMode` state for initial popup, `isNewScreenMode` for prompt form
+  - Right-click handler (`handleContextMenu`) prevents default browser context menu
+  - Uses `e.clientX` and `e.clientY` directly (browser viewport coordinates) for popup positioning
+  - `CreateScreenPopup` and `NewScreenDialog` use `fixed` positioning, so they need browser viewport coordinates
+  - Popups are rendered outside the Viewport component (as siblings) to avoid being affected by viewport transform
+  - When creating screen, converts from browser viewport coordinates → viewport container coordinates → content coordinates
   - Both popups can be dismissed by clicking outside
-- **Location**: `src/app/page.tsx`, `src/components/CreateScreenPopup.tsx`
+  - Left-click anywhere dismisses the popup if it's open
+- **Location**: `src/app/page.tsx`, `src/components/CreateScreenPopup.tsx`, `src/components/Viewport.tsx`
 
 ### 10. Draggable Screens
 
-- **Decision**: Allow unselected screens to be dragged for repositioning
-- **Reason**: Enables spatial organization of screens without requiring selection
+- **Decision**: Allow all screens (selected and unselected) to be dragged for repositioning
+- **Reason**: Enables spatial organization of screens without requiring deselection
 - **Implementation**:
   - Track `draggedScreenId` and `isDraggingScreen` state to distinguish between click and drag
   - Only mark as dragging after mouse moves >5px to allow clicks to select
   - Prevent viewport panning as soon as `draggedScreenId` is set (even before 5px threshold)
   - Update screen position in content coordinates, accounting for viewport scale
-  - Selected screens remain non-draggable to allow interaction with their content
-  - Deselect current screen when starting to drag another screen
+  - All screens (selected and unselected) can be dragged - removed condition that prevented dragging selected screens
+  - If dragging a different screen, deselect the current one; if dragging the selected screen, keep it selected
   - Prevent selection if user dragged (not just clicked)
-- **Location**: `src/app/page.tsx`
+  - **Overlay Click Detection**: Check if click is on overlay element (touchable/clickable highlight) before starting screen drag
+    - Overlay elements have `data-overlay-highlight` attribute for identification
+    - Overlay highlights have `pointerEvents: "auto"` to receive mouse events
+    - If clicking on overlay, skip screen drag and let overlay handler start link creation instead
+- **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`
 
 ### 11. Camera Position Persistence
 
@@ -335,6 +343,9 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Highlights selected prompt with blue border and background
   - Modification input field with label "What you would like to change"
   - Ctrl/Cmd+Enter to submit modifications
+  - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` instead of `onClick` to prevent blur event from dismissing the panel when textarea is focused
+    - Prevents `onBlur` handler from closing the form before `handleCreate` can execute
+    - Ensures form stays open and create action completes successfully
   - Positioned absolutely to the right of Screen component
   - Uses `left-full ml-2` for positioning
 

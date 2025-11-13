@@ -246,7 +246,10 @@ ${html}`;
               disabled={isLoading}
             />
             <Button
-              onClick={handleCreate}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleCreate();
+              }}
               disabled={isLoading || !editValue.trim()}
               className="flex items-center justify-center gap-2 text-xs"
             >

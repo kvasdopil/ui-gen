@@ -75,19 +75,29 @@ export default function Home() {
     // Check if clicking on a screen container
     const screenContainer = target.closest("[data-screen-container]") as HTMLElement | null;
 
-    // If clicking on a screen container, check if it's unselected
+    // If clicking on a screen container, check if it's an overlay click first
     if (screenContainer) {
+      // Check if clicking on an overlay element (touchable/clickable highlight)
+      const isOverlayClick = target.hasAttribute("data-overlay-highlight") || 
+                             target.closest("[data-overlay-highlight]") !== null;
+      
+      if (isOverlayClick) {
+        // Don't start screen drag, let the overlay handle it (which will start link creation)
+        return;
+      }
+
       const screenId = screenContainer.id;
       const screen = screens.find((s) => s.id === screenId);
 
-      // Only allow dragging if screen is not selected
-      if (screen && screen.id !== selectedScreenId) {
-        // Deselect current screen when starting to drag another screen
-        setSelectedScreenId(null);
+      if (screen && screen.position) {
+        // If dragging a different screen, deselect the current one
+        if (screen.id !== selectedScreenId) {
+          setSelectedScreenId(null);
+        }
 
         // Set up potential screen drag (but don't mark as dragging yet)
         const viewportElement = viewportHandleRef.current?.getElement();
-        if (viewportElement && screen.position) {
+        if (viewportElement) {
           // Store initial mouse position and screen position
           setScreenDragStart({
             x: e.clientX,
@@ -101,7 +111,6 @@ export default function Home() {
         }
         return;
       }
-      // If screen is selected, let it handle the click (don't drag)
       return;
     }
 
@@ -351,19 +360,17 @@ export default function Home() {
       const viewportElement = viewportHandleRef.current?.getElement();
       const isWithinViewport = viewportElement?.contains(target);
       if (isWithinViewport) {
-        const rect = viewportElement?.getBoundingClientRect();
-        if (rect) {
-          const position = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
-          };
-          setNewScreenPosition(position);
-          // Toggle popup: if already open, close it; otherwise open it
-          if (isCreateScreenPopupMode) {
-            setIsCreateScreenPopupMode(false);
-          } else {
-            setIsCreateScreenPopupMode(true);
-          }
+        // Use clientX/clientY directly for fixed positioning (not affected by viewport transform)
+        const position = {
+          x: e.clientX,
+          y: e.clientY,
+        };
+        setNewScreenPosition(position);
+        // Toggle popup: if already open, close it; otherwise open it
+        if (isCreateScreenPopupMode) {
+          setIsCreateScreenPopupMode(false);
+        } else {
+          setIsCreateScreenPopupMode(true);
         }
       }
     }
@@ -478,10 +485,18 @@ export default function Home() {
   const handleCreateNewScreen = useCallback(() => {
     if (!newScreenInput.trim()) return;
 
-    // Convert form position (viewport coordinates) to viewport-content coordinates
+    // Convert from browser viewport coordinates (clientX, clientY) to viewport container coordinates,
+    // then to content coordinates
+    const viewportElement = viewportHandleRef.current?.getElement();
     const viewportToContent = viewportHandleRef.current?.viewportToContent;
-    if (!viewportToContent) return;
-    const contentPos = viewportToContent(newScreenPosition.x, newScreenPosition.y);
+    if (!viewportElement || !viewportToContent) return;
+    
+    const rect = viewportElement.getBoundingClientRect();
+    // Convert from browser viewport coordinates to viewport container coordinates
+    const viewportX = newScreenPosition.x - rect.left;
+    const viewportY = newScreenPosition.y - rect.top;
+    // Convert from viewport container coordinates to content coordinates
+    const contentPos = viewportToContent(viewportX, viewportY);
     const contentX = contentPos.x;
     const contentY = contentPos.y;
 
@@ -724,13 +739,13 @@ export default function Home() {
             setIsCreateScreenPopupMode(false);
           }
         }}
+        onContextMenu={handleContextMenu}
       >
         <div
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          onContextMenu={handleContextMenu}
           style={{ cursor: isDraggingScreen ? "grabbing" : "default" }}
         >
           {/* Arrow line overlay - rendered in content coordinates */}
@@ -853,11 +868,9 @@ export default function Home() {
                   transform: "translate(-50%, -50%)",
                   zIndex,
                   cursor:
-                    screen.id === selectedScreenId
-                      ? "default"
-                      : isDraggingScreen && draggedScreenId === screen.id
-                        ? "grabbing"
-                        : "grab",
+                    isDraggingScreen && draggedScreenId === screen.id
+                      ? "grabbing"
+                      : "grab",
                 }}
               >
                 <Screen
@@ -876,32 +889,34 @@ export default function Home() {
             );
           })}
         </div>
-
-        {/* Create Screen Popup - initial popup with Mobile app button */}
-        {isCreateScreenPopupMode && (
-          <CreateScreenPopup
-            ref={createScreenPopupRef}
-            position={newScreenPosition}
-            onSelect={() => {
-              setIsCreateScreenPopupMode(false);
-              setIsNewScreenMode(true);
-            }}
-            onDismiss={() => setIsCreateScreenPopupMode(false)}
-          />
-        )}
-
-        {/* New Screen Dialog */}
-        {isNewScreenMode && (
-          <NewScreenDialog
-            ref={newScreenFormRef}
-            position={newScreenPosition}
-            value={newScreenInput}
-            onChange={setNewScreenInput}
-            onSubmit={handleCreateNewScreen}
-            onDismiss={() => setIsNewScreenMode(false)}
-          />
-        )}
       </Viewport>
+
+      {/* Create Screen Popup - initial popup with Mobile app button */}
+      {/* Rendered outside Viewport to avoid transform effects */}
+      {isCreateScreenPopupMode && (
+        <CreateScreenPopup
+          ref={createScreenPopupRef}
+          position={newScreenPosition}
+          onSelect={() => {
+            setIsCreateScreenPopupMode(false);
+            setIsNewScreenMode(true);
+          }}
+          onDismiss={() => setIsCreateScreenPopupMode(false)}
+        />
+      )}
+
+      {/* New Screen Dialog */}
+      {/* Rendered outside Viewport to avoid transform effects */}
+      {isNewScreenMode && (
+        <NewScreenDialog
+          ref={newScreenFormRef}
+          position={newScreenPosition}
+          value={newScreenInput}
+          onChange={setNewScreenInput}
+          onSubmit={handleCreateNewScreen}
+          onDismiss={() => setIsNewScreenMode(false)}
+        />
+      )}
     </>
   );
 }
