@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String   @default("default")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  screens Screen[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Screen {
+  id                 String       @id @default(uuid())
+  workspaceId        String
+  positionX          Float
+  positionY          Float
+  selectedPromptIndex Int?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dialogEntries DialogEntry[]
+
+  @@index([workspaceId])
+}
+
+model DialogEntry {
+  id        String   @id @default(uuid())
+  screenId  String
+  prompt    String
+  html      String?
+  title     String?
+  timestamp BigInt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  @@index([screenId])
+  @@index([screenId, timestamp])
+}

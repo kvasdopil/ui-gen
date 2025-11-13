@@ -24,10 +24,19 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 3. API Endpoint Structure
 
-- **Decision**: Single `/api/create` endpoint that uses system prompt constant
-- **Reason**: Prompt is embedded in codebase as a constant for better performance and bundling
-- **Important**: System prompt is imported from `src/prompts/generate-ui.ts` as `GENERATE_UI_PROMPT` constant
-- **Location**: `src/app/api/create/route.ts`
+- **Decision**: RESTful API with separate endpoints for screens and dialog entries
+- **Reason**: Better separation of concerns, consistent with REST principles, allows for more granular operations
+- **Endpoints**:
+  - `GET /api/screens` - List all screens for user's workspace
+  - `POST /api/screens` - Create new screen (requires x, y coordinates)
+  - `PUT /api/screens/:id` - Update screen (partial data)
+  - `DELETE /api/screens/:id` - Delete screen
+  - `GET /api/screens/:id/dialog` - List dialog entries for a screen
+  - `POST /api/screens/:id/dialog` - Create dialog entry (generates HTML)
+  - `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
+- **Deprecated**: `/api/create` endpoint is deprecated but kept for backward compatibility
+- **UI Generation**: Extracted to `src/lib/ui-generation.ts` as reusable function
+- **Location**: `src/app/api/screens/`, `src/lib/ui-generation.ts`
 
 ### 4. HTML Cleanup
 
@@ -50,18 +59,21 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 7. Data Persistence
 
-- **Decision**: Use IndexedDB for client-side persistence with abstraction layer
-- **Reason**: Persist screens, conversations, generated content, and camera position/zoom without backend dependency
+- **Decision**: Use Neon PostgreSQL database for screens and dialog entries, IndexedDB for client-side state
+- **Reason**: Server-side persistence allows data to be accessible across devices and sessions
 - **Implementation**:
-  - Storage abstraction interface in `src/lib/storage.ts`
-  - `IdbStorage` class implementing IndexedDB operations
-  - Auto-save on screen changes, auto-load on mount
-  - Auto-save viewport transform (camera position and zoom) with 500ms debounce to avoid excessive writes
-  - Auto-save screens with 300ms debounce to batch rapid updates and prevent race conditions
-  - Auto-load viewport transform on mount
-  - Database version: 2 (upgraded from 1 to add viewportTransform object store)
-  - Easy to swap for backend persistence later (just implement Storage interface)
-- **Location**: `src/lib/storage.ts`, `src/lib/types.ts`, `src/app/page.tsx`
+  - **Database**: Neon PostgreSQL with Prisma ORM
+  - **Schema**: Workspace → Screen → DialogEntry (one-to-many relationships)
+  - **User Identification**: Email hash (SHA-256) used as userId for privacy
+  - **Workspace**: Each user has a default workspace (email hash + name 'default')
+  - **Storage abstraction**: `ApiStorage` class in `src/lib/storage.ts` implements Storage interface
+  - **API-based**: Screens and dialog entries saved via REST API endpoints
+  - **IndexedDB**: Still used for viewport transform and pending prompts (client-side state)
+  - Auto-save screens to API on changes (debounced by 300ms)
+  - Auto-save viewport transform with 500ms debounce
+  - Auto-load screens from API on mount
+  - Database migrations managed via Prisma
+- **Location**: `prisma/schema.prisma`, `src/lib/storage.ts`, `src/lib/prisma.ts`, `src/app/api/screens/`
 
 ### 8. Data Structure
 
@@ -72,22 +84,24 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 9. Screen Creation Flow
 
-- **Decision**: Right-click on viewport to create new screens, popups rendered outside viewport to avoid transform effects
-- **Reason**: Prevents viewport disruption when creating multiple screens quickly; popups should not be affected by pan/zoom
-- **Z-Index**: Newer screens appear above older ones; selected screens always on top
-- **Right-Click Flow**:
-  1. Right-click on empty space (not on screens) shows `CreateScreenPopup` component
+- **Decision**: Two-step process - create screen first, then create first dialog entry
+- **Reason**: More consistent API design, allows screen to appear immediately while HTML is being generated
+- **Flow**:
+  1. Right-click on empty space shows `CreateScreenPopup` component
   2. Popup appears at right-click location with "Create screen" title and "Mobile app" button
   3. Clicking "Mobile app" button shows the "What you want to create" dialog form
+  4. User enters prompt and clicks "Create"
+  5. **Step 1**: Screen is created via `POST /api/screens` (with x, y coordinates) - appears immediately
+  6. **Step 2**: First dialog entry is created via `POST /api/screens/:id/dialog` (with prompt) - generates HTML
 - **Implementation**:
   - Right-click handler (`handleContextMenu`) prevents default browser context menu
   - Uses `e.clientX` and `e.clientY` directly (browser viewport coordinates) for popup positioning
-  - `CreateScreenPopup` and `NewScreenDialog` use `fixed` positioning, so they need browser viewport coordinates
+  - `CreateScreenPopup` and `NewScreenDialog` use `fixed` positioning
   - Popups are rendered outside the Viewport component (as siblings) to avoid being affected by viewport transform
   - When creating screen, converts from browser viewport coordinates → viewport container coordinates → content coordinates
-  - Both popups can be dismissed by clicking outside
-  - Left-click anywhere dismisses the popup if it's open
-- **Location**: `src/app/page.tsx`, `src/components/CreateScreenPopup.tsx`, `src/components/Viewport.tsx`
+  - Screen appears immediately with empty conversation points
+  - Dialog entry creation happens asynchronously, updates screen when complete
+- **Location**: `src/app/page.tsx`, `src/components/CreateScreenPopup.tsx`, `src/app/api/screens/`
 
 ### 10. Draggable Screens
 
@@ -201,20 +215,24 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 19. Clickable Highlights Overlay
 
-- **Decision**: Add overlay layer to highlight interactive elements (`<a>` and `<button>`) without modifying generated content
-- **Reason**: Helps users identify clickable elements in generated designs for accessibility and design review
+- **Decision**: Add overlay layer to highlight interactive elements (`<a>` and `<button>`) without modifying generated content, with clickable overlays for arrow creation
+- **Reason**: Helps users identify clickable elements in generated designs for accessibility and design review, and enables creating visual connections between screens
 - **Implementation**:
   - Toggle button (TbHandClick icon) next to screen title to show/hide highlights
   - Icon is gray (`text-gray-400`) by default, blue (`text-blue-500`) when active
-  - Overlay layer positioned absolutely over iframe with `pointer-events: none` to avoid interference
+  - Overlay layer positioned absolutely over iframe
   - Highlights `<a>` elements with `href` attribute in magenta (`#ff00ff` with 10% opacity fill)
   - Highlights `<button>` elements in cyan (`#00ffff` with 10% opacity fill)
   - Uses `offsetLeft`/`offsetTop` to calculate element positions relative to iframe document (not affected by CSS transforms)
   - Adds iframe offset within container to get final position relative to container (where overlay is positioned)
   - Updates highlights when iframe content loads, changes, or window resizes
   - State (`showClickables`) is not persisted - resets to `false` on page reload
+  - **Clickable Overlays**: Overlay highlight divs have `pointerEvents: "auto"` and `data-overlay-highlight` attribute
+    - Clicking on overlay highlights starts arrow creation (calls `onOverlayClick`)
+    - Screen drag handler checks for overlay clicks and skips dragging if click is on overlay
+    - Prevents screen dragging when clicking on touchable elements - allows link creation instead
 - **Gotcha**: `getBoundingClientRect()` returns viewport coordinates affected by CSS transforms, so we use `offsetLeft`/`offsetTop` instead to get positions relative to iframe document
-- **Location**: `src/components/Screen.tsx`
+- **Location**: `src/components/Screen.tsx`, `src/app/page.tsx`
 
 ### 20. Auth Flow Preservation
 
@@ -265,21 +283,42 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
   - Get from Google Cloud Console > APIs & Services > Credentials
   - **Important**: When setting via Vercel CLI, use `echo -n` to avoid trailing newlines
+- `DATABASE_URL`: Neon PostgreSQL connection string
+  - Get from Neon dashboard or CLI: `neonctl projects list`
+  - Format: `postgresql://user:password@host/database?sslmode=require`
+  - Required for Prisma database access
 
 ## Important Code Locations
 
-### API Route
+### API Routes
 
-- **File**: `src/app/api/create/route.ts`
-- **Key Functions**:
-  - **Requires Authentication**: Checks for authenticated session using `auth()` from Auth.js
-  - Returns 401 Unauthorized if no session exists (client handles this by saving prompt and triggering auth)
-  - Imports `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
+- **Screens**: `src/app/api/screens/route.ts` and `src/app/api/screens/[id]/route.ts`
+  - GET: List all screens for user's workspace
+  - POST: Create new screen (requires x, y coordinates)
+  - PUT: Update screen (partial data: x, y, selectedPromptIndex)
+  - DELETE: Delete screen and all dialog entries
+  - All endpoints require authentication
+  - Auto-creates workspace if user doesn't have one
+
+- **Dialog Entries**: `src/app/api/screens/[id]/dialog/route.ts` and `src/app/api/screens/[id]/dialog/[dialogId]/route.ts`
+  - GET: List all dialog entries for a screen
+  - POST: Create dialog entry (requires prompt, generates HTML automatically)
+  - DELETE: Delete dialog entry
+  - Dialog entries are immutable (no update endpoint)
+
+- **UI Generation**: `src/lib/ui-generation.ts`
+  - Extracted reusable function `generateUIFromHistory()`
+  - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
   - Uses `gemini-2.5-flash` model with temperature 0.5
   - Cleans markdown code blocks from response
-  - Returns `{ html: string }` with title metadata comment (`<!-- Title: ... -->`)
+  - Returns HTML with title metadata comment (`<!-- Title: ... -->`)
 
-### Authentication
+- **Deprecated**: `src/app/api/create/route.ts`
+  - Kept for backward compatibility
+  - Uses extracted UI generation function
+  - Returns deprecation notice in response
+
+### Authentication & User Management
 
 - **File**: `src/app/api/auth/[...nextauth]/route.ts`
 - **Key Features**:
@@ -288,6 +327,13 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Callbacks to include user ID, name, email, and image in session
   - Exports `handlers`, `signIn`, `signOut`, and `auth` functions
   - `trustHost: true` to allow custom hosts (localhost, etc.)
+
+- **File**: `src/lib/auth.ts`
+- **Key Functions**:
+  - `getAuthenticatedUser()` - Gets authenticated user from session (requires email)
+  - `getOrCreateWorkspace()` - Auto-creates workspace if user doesn't have one
+  - `hashEmail()` - Creates SHA-256 hash of email for use as userId
+  - Uses email hash for privacy (emails not stored in plain text)
 
 ### UserAvatar Component
 
@@ -354,28 +400,32 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **File**: `src/lib/storage.ts`
 - **Key Features**:
   - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
-  - `IdbStorage` class implementing IndexedDB operations
-  - Uses `idb` package for IndexedDB wrapper
-  - Database name: `ui-gen-db`, version: 3 (upgraded from 2 to add pendingPrompt store)
+  - `ApiStorage` class implementing API-based storage for screens
+  - Uses REST API endpoints for screens and dialog entries
+  - Uses IndexedDB for client-side state (viewport transform, pending prompts)
+  - Database name: `ui-gen-db`, version: 2
   - Object stores:
-    - `screens` with key `"all"` storing array of ScreenData
     - `viewportTransform` with key `"current"` storing ViewportTransform
     - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
-  - Auto-saves screens whenever they change (debounced by 300ms to prevent race conditions)
+  - Auto-saves screens to API whenever they change (debounced by 300ms)
   - Auto-saves viewport transform with 500ms debounce
-  - Auto-loads screens and viewport transform on mount
+  - Auto-loads screens from API on mount
   - Pending prompts are saved when auth is required and loaded after authentication
-  - Easy to swap for backend persistence (just implement Storage interface)
 
 ### Types
 
 - **File**: `src/lib/types.ts`
 - **Key Types**:
-  - `ConversationPoint`: `{ prompt: string, html: string, title: string | null, timestamp: number }`
-  - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number } }`
+  - `ConversationPoint`: `{ prompt: string, html: string, title: string | null, timestamp: number, arrows?: ConversationPointArrow[] }`
+  - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number }, height?: number }`
 - **File**: `src/lib/storage.ts`
 - **Key Types**:
   - `ViewportTransform`: `{ x: number, y: number, scale: number }` - Camera position and zoom level
+- **File**: `prisma/schema.prisma`
+- **Database Models**:
+  - `Workspace`: `{ id: uuid, userId: string (email hash), name: string (default: 'default'), createdAt, updatedAt }`
+  - `Screen`: `{ id: uuid, workspaceId: uuid, positionX: float, positionY: float, selectedPromptIndex: int?, createdAt, updatedAt }`
+  - `DialogEntry`: `{ id: uuid, screenId: uuid, prompt: string, html: string?, title: string?, timestamp: bigint, createdAt, updatedAt }`
 
 ## System Prompt
 
@@ -485,24 +535,24 @@ interface PromptPanelProps {
 2. `CreateScreenPopup` component appears at click location with "Create screen" title and "Mobile app" button
 3. User clicks "Mobile app" button to open the prompt dialog form
 4. User enters prompt and clicks "Create"
-5. Screen is created with initial conversation point (prompt, no HTML yet)
-6. `Screen` component auto-detects incomplete conversation point and calls `/api/create`
-7. API endpoint:
-   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
-   - Converts conversation points to history format (only completed points with HTML)
+5. **Step 1**: Screen is created via `POST /api/screens` (with x, y coordinates)
+   - Screen appears immediately with empty conversation points
+   - Screen ID is returned right away
+6. **Step 2**: First dialog entry is created via `POST /api/screens/:id/dialog` (with prompt)
+   - API endpoint uses `generateUIFromHistory()` from `src/lib/ui-generation.ts`
+   - Converts existing dialog entries to history format (none for first entry)
    - Calls Gemini API via Vercel AI SDK
    - Cleans markdown code blocks
-   - Returns HTML with title metadata comment
-8. `Screen` component:
+   - Returns dialog entry with HTML and title metadata
+7. `Screen` component:
+   - Updates with the new dialog entry
    - Extracts title from HTML metadata (`<!-- Title: ... -->`)
-   - Replaces the incomplete conversation point with completed one (prevents duplicate)
-   - Updates conversation point with HTML and title
    - Displays title above the screen
    - Wraps HTML with document structure
    - Injects Tailwind CDN
    - Sets `srcDoc` on iframe
-9. Screen data is automatically saved to IndexedDB
-10. Iframe renders the generated UI
+8. Screen data is automatically saved to database via API
+9. Iframe renders the generated UI
 
 ### Making Modifications
 
@@ -510,10 +560,16 @@ interface PromptPanelProps {
 2. User clicks "Modify" button
 3. User enters modification request and clicks "Create"
 4. `Screen` component immediately adds incomplete conversation point to history (prompt appears right away)
-5. API call is made with full conversation history
-6. When API response arrives, incomplete point is replaced with completed point
-7. If API call fails, incomplete point is removed from history
-8. User can click prompts in history panel to view different versions
+5. API call is made to `POST /api/screens/:id/dialog` with the prompt
+6. API endpoint:
+   - Loads all existing dialog entries for the screen
+   - Converts them to history format
+   - Adds the new prompt to history
+   - Calls `generateUIFromHistory()` to generate HTML
+   - Creates new dialog entry in database
+7. When API response arrives, incomplete point is replaced with completed point
+8. If API call fails, incomplete point is removed from history
+9. User can click prompts in history panel to view different versions
 
 ## Testing Considerations
 
@@ -529,7 +585,7 @@ interface PromptPanelProps {
 1. **Streaming Responses**: Use `streamText` instead of `generateText` for faster perceived performance
 2. **Error Recovery**: Better error messages and retry mechanisms
 3. **UI Export**: Allow users to download generated HTML
-4. **Backend Persistence**: Replace IndexedDB with backend API (easy swap via Storage interface)
+4. **Backend Persistence**: ✅ Completed - Screens and dialog entries now use PostgreSQL database via REST API
 5. **Multiple Sizes**: Support different screen sizes beyond 390px × 844px
 6. **Custom Tailwind Config**: Allow users to customize Tailwind settings
 7. **Pre-compiled Tailwind**: Consider using a pre-compiled Tailwind CSS file instead of CDN for better reliability
@@ -551,9 +607,21 @@ interface PromptPanelProps {
 - PromptPanel is positioned absolutely relative to Screen component wrapper
 - Loading spinner only covers Screen, not the entire page
 - Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
-- Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - can be swapped for backend easily
-- Screens are auto-saved to IndexedDB on every change, auto-loaded on mount
-- Viewport transform (camera position and zoom) is auto-saved with 500ms debounce, auto-loaded on mount
+- UI generation logic is extracted to `src/lib/ui-generation.ts` as reusable function `generateUIFromHistory()`
+- The UI generation function automatically cleans markdown code blocks - don't duplicate this logic
+- Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - uses API for screens, IndexedDB for client state
+- Screens are auto-saved to database via API on every change, auto-loaded from API on mount
+- Viewport transform (camera position and zoom) is auto-saved to IndexedDB with 500ms debounce, auto-loaded on mount
+- Database: Neon PostgreSQL with Prisma ORM (see `prisma/schema.prisma`)
+- User identification: Email hash (SHA-256) used as userId for privacy (see `src/lib/auth.ts` - `hashEmail()` function)
+- Workspace: Each user has a default workspace (email hash + name 'default')
+- Screen creation: Two-step process - create screen first via `POST /api/screens`, then create first dialog entry via `POST /api/screens/:id/dialog`
+- Dialog entries: Immutable once created (no update endpoint, only DELETE)
+- API endpoints: RESTful design with separate endpoints for screens and dialog entries (see `src/app/api/screens/`)
+- Validation: Zod schemas used for all API request validation (see `src/lib/validations.ts`)
+- All API endpoints require authentication - use `getAuthenticatedUser()` from `src/lib/auth.ts`
+- Workspace auto-creation: Use `getOrCreateWorkspace()` from `src/lib/auth.ts` to get or create user's workspace
+- Deprecated endpoint: `/api/create` is deprecated but kept for backward compatibility
 - New screens are NOT auto-selected or auto-centered to prevent viewport disruption
 - Z-index: Newer screens appear above older ones; selected screens always on top
 - Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations using screen ID + timestamp key
@@ -568,7 +636,7 @@ interface PromptPanelProps {
 - New screen creation: Two-click behavior - first click deselects, second click shows initial popup; two-step flow: CreateScreenPopup with "Mobile app" button → prompt dialog form
 - CreateScreenPopup component: Separate component for initial screen type selection; uses forwardRef for click-outside detection; ghost button style with icon and label
 - Conversation points: Incomplete points are replaced (not duplicated) when generation completes; modification prompts appear immediately in history
-- OAuth authentication: UserAvatar component in top-right corner; `/api/create` endpoint requires authenticated session; Auth.js v5 with Google OAuth provider
+- OAuth authentication: UserAvatar component in top-right corner; all API endpoints require authenticated session; Auth.js v5 with Google OAuth provider
 - UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference
 - OAuth environment variables: Must not have trailing newlines when setting via Vercel CLI (use `echo -n`); `AUTH_URL` must match production domain exactly
 - Auth flow preservation: When 401 occurs, prompt and screenId are saved to IndexedDB; after auth, screen is selected and generation auto-retries; pending prompts are cleared after restoration

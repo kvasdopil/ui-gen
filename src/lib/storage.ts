@@ -8,10 +8,6 @@ export type ViewportTransform = {
 };
 
 interface UIDatabase extends DBSchema {
-  screens: {
-    key: string;
-    value: ScreenData[];
-  };
   viewportTransform: {
     key: string;
     value: ViewportTransform;
@@ -45,9 +41,9 @@ export interface Storage {
   clearPendingPrompt(): Promise<void>;
 }
 
-class IdbStorage implements Storage {
+class ApiStorage implements Storage {
   private dbName = "ui-gen-db";
-  private dbVersion = 3;
+  private dbVersion = 2;
   private db: IDBPDatabase<UIDatabase> | null = null;
 
   private async getDB(): Promise<IDBPDatabase<UIDatabase>> {
@@ -57,9 +53,6 @@ class IdbStorage implements Storage {
 
     this.db = await openDB<UIDatabase>(this.dbName, this.dbVersion, {
       upgrade(db) {
-        if (!db.objectStoreNames.contains("screens")) {
-          db.createObjectStore("screens");
-        }
         if (!db.objectStoreNames.contains("viewportTransform")) {
           db.createObjectStore("viewportTransform");
         }
@@ -74,31 +67,63 @@ class IdbStorage implements Storage {
 
   async saveScreens(screens: ScreenData[]): Promise<void> {
     try {
-      const db = await this.getDB();
-      await db.put("screens", screens, "all");
+      // Save screens to API - update each screen individually
+      for (const screen of screens) {
+        if (screen.id && screen.position) {
+          // Update screen position and selectedPromptIndex
+          const response = await fetch(`/api/screens/${screen.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              x: screen.position.x,
+              y: screen.position.y,
+              selectedPromptIndex: screen.selectedPromptIndex,
+            }),
+          });
+
+          if (!response.ok) {
+            console.error(`Error updating screen ${screen.id}:`, await response.text());
+          }
+        }
+      }
     } catch (error) {
-      console.error("Error saving screens to IndexedDB:", error);
+      console.error("Error saving screens to API:", error);
       throw error;
     }
   }
 
   async loadScreens(): Promise<ScreenData[]> {
     try {
-      const db = await this.getDB();
-      const screens = await db.get("screens", "all");
+      const response = await fetch("/api/screens");
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Not authenticated, return empty array
+          return [];
+        }
+        throw new Error(`Failed to load screens: ${response.statusText}`);
+      }
+      const screens = await response.json();
       return screens || [];
     } catch (error) {
-      console.error("Error loading screens from IndexedDB:", error);
+      console.error("Error loading screens from API:", error);
       return [];
     }
   }
 
   async clearScreens(): Promise<void> {
     try {
-      const db = await this.getDB();
-      await db.delete("screens", "all");
+      // Load all screens and delete them
+      const screens = await this.loadScreens();
+      for (const screen of screens) {
+        const response = await fetch(`/api/screens/${screen.id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          console.error(`Error deleting screen ${screen.id}:`, await response.text());
+        }
+      }
     } catch (error) {
-      console.error("Error clearing screens from IndexedDB:", error);
+      console.error("Error clearing screens:", error);
       throw error;
     }
   }
@@ -165,4 +190,4 @@ class IdbStorage implements Storage {
 }
 
 // Export default storage instance
-export const storage: Storage = new IdbStorage();
+export const storage: Storage = new ApiStorage();

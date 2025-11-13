@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signIn } from "next-auth/react";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
@@ -482,7 +482,7 @@ export default function Home() {
   }, []);
 
   // Handle creating a new screen from the form
-  const handleCreateNewScreen = useCallback(() => {
+  const handleCreateNewScreen = useCallback(async () => {
     if (!newScreenInput.trim()) return;
 
     // Convert from browser viewport coordinates (clientX, clientY) to viewport container coordinates,
@@ -497,37 +497,94 @@ export default function Home() {
     const viewportY = newScreenPosition.y - rect.top;
     // Convert from viewport container coordinates to content coordinates
     const contentPos = viewportToContent(viewportX, viewportY);
-    const contentX = contentPos.x;
-    const contentY = contentPos.y;
+    const contentX = snapToGrid(contentPos.x);
+    const contentY = snapToGrid(contentPos.y);
 
-    // Create initial conversation point with the user prompt (HTML will be added after generation)
-    const initialConversationPoint = {
-      prompt: newScreenInput.trim(),
-      html: "",
-      title: null,
-      timestamp: Date.now(),
-    };
+    const prompt = newScreenInput.trim();
 
-    // Create the screen with initial conversation point (will trigger generation)
-    // Snap position to grid
-    const timestamp = Date.now();
-    const newScreen: ScreenData = {
-      id: `screen-${timestamp}`,
-      conversationPoints: [initialConversationPoint],
-      selectedPromptIndex: 0,
-      position: { x: snapToGrid(contentX), y: snapToGrid(contentY) },
-    };
+    try {
+      // Step 1: Create screen via API (without prompt)
+      const screenResponse = await fetch("/api/screens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          x: contentX,
+          y: contentY,
+        }),
+      });
 
-    setScreens((prevScreens) => [...prevScreens, newScreen]);
-    // Don't auto-select - let user click to select if they want
-    // setSelectedScreenId(newScreen.id);
+      if (!screenResponse.ok) {
+        if (screenResponse.status === 401) {
+          // Save prompt and position for restoration after auth
+          await storage.savePendingPrompt(prompt, null, { x: contentX, y: contentY });
+          // Trigger sign in - will redirect back after auth
+          signIn("google", { callbackUrl: window.location.href });
+          return;
+        }
+        throw new Error("Failed to create screen");
+      }
 
-    // Close the form and clear input
-    setIsNewScreenMode(false);
-    setNewScreenInput("");
+      const newScreen: ScreenData = await screenResponse.json();
 
-    // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
-    // centerAndZoomScreen(newScreen.id);
+      // Add screen immediately with empty conversation points so it appears right away
+      setScreens((prevScreens) => [...prevScreens, newScreen]);
+
+      // Close the form and clear input
+      setIsNewScreenMode(false);
+      setNewScreenInput("");
+
+      // Step 2: Create first dialog entry (this will generate HTML)
+      try {
+        const dialogResponse = await fetch(`/api/screens/${newScreen.id}/dialog`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+
+        if (!dialogResponse.ok) {
+          if (dialogResponse.status === 401) {
+            // Save prompt for restoration after auth
+            await storage.savePendingPrompt(prompt, newScreen.id, null);
+            signIn("google", { callbackUrl: window.location.href });
+            return;
+          }
+          throw new Error("Failed to create dialog entry");
+        }
+
+        const dialogEntry = await dialogResponse.json();
+
+        // Update screen with the new dialog entry
+        setScreens((prevScreens) =>
+          prevScreens.map((screen) => {
+            if (screen.id === newScreen.id) {
+              return {
+                ...screen,
+                conversationPoints: [
+                  {
+                    prompt: dialogEntry.prompt,
+                    html: dialogEntry.html,
+                    title: dialogEntry.title,
+                    timestamp: dialogEntry.timestamp,
+                    arrows: [],
+                  },
+                ],
+                selectedPromptIndex: 0,
+              };
+            }
+            return screen;
+          }),
+        );
+      } catch (error) {
+        console.error("Error creating dialog entry:", error);
+        // Screen is already created, so user can see it even if dialog creation fails
+      }
+
+      // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
+      // centerAndZoomScreen(newScreen.id);
+    } catch (error) {
+      console.error("Error creating screen:", error);
+      // TODO: Show error to user
+    }
   }, [newScreenInput, newScreenPosition, setNewScreenInput]);
 
   // Handle screen update

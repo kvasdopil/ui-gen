@@ -496,37 +496,38 @@ export default function Screen({
 
     setIsLoading(true);
     try {
-      // Convert existing conversation points to history format for API
-      // Only include completed points (those with HTML) - this automatically excludes the incomplete point
-      // Use pointsWithIncomplete to ensure we have the latest data
-      const historyForApi = conversationPointsToHistory(pointsWithIncomplete);
+      let response: Response;
+      let data: { html: string; id?: string; prompt?: string; title?: string | null; timestamp?: number };
 
-      // Add the new user prompt to the history for the API
-      historyForApi.push({ type: "user", content: promptToSend });
+      if (screenData) {
+        // Update existing screen - add dialog entry
+        response = await fetch(`/api/screens/${id}/dialog`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: promptToSend }),
+        });
 
-      const response = await fetch("/api/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history: historyForApi }),
-      });
-
-      if (!response.ok) {
-        // Handle unauthorized error - save prompt and trigger auth
-        if (response.status === 401) {
-          // Save the prompt and screenId for restoration after auth
-          // The screen already exists with the incomplete conversation point
-          await storage.savePendingPrompt(promptToSend, id, null);
-          // Trigger sign in - will redirect back after auth
-          signIn("google", { callbackUrl: window.location.href });
-          return; // Exit early - will retry after auth
+        if (!response.ok) {
+          // Handle unauthorized error - save prompt and trigger auth
+          if (response.status === 401) {
+            // Save the prompt and screenId for restoration after auth
+            // The screen already exists with the incomplete conversation point
+            await storage.savePendingPrompt(promptToSend, id, null);
+            // Trigger sign in - will redirect back after auth
+            signIn("google", { callbackUrl: window.location.href });
+            return; // Exit early - will retry after auth
+          }
+          throw new Error("Failed to generate UI");
         }
-        throw new Error("Failed to generate UI");
+
+        data = await response.json();
+      } else {
+        // This shouldn't happen for modifications, but handle it just in case
+        throw new Error("Screen data not found");
       }
 
-      const data = await response.json();
-
       // Extract title from HTML
-      const title = extractTitle(data.html);
+      const title = data.title || extractTitle(data.html);
 
       // Create the completed conversation point with HTML and title
       // Preserve the original timestamp from the incomplete point
@@ -534,7 +535,7 @@ export default function Screen({
         prompt: promptToSend,
         html: data.html,
         title,
-        timestamp: timestampToUse,
+        timestamp: data.timestamp || timestampToUse,
       };
 
       // Replace the incomplete point with the completed one
@@ -554,16 +555,10 @@ export default function Screen({
       const newSelectedPromptIndex = finalPoints.length - 1;
       setSelectedPromptIndex(newSelectedPromptIndex);
 
-      // Update or create screen data
+      // Update screen data
       if (screenData) {
         // Update existing screen
         onUpdate(id, {
-          conversationPoints: finalPoints,
-          selectedPromptIndex: newSelectedPromptIndex,
-        });
-      } else {
-        // Create new screen
-        onCreate({
           conversationPoints: finalPoints,
           selectedPromptIndex: newSelectedPromptIndex,
         });

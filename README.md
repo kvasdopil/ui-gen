@@ -28,7 +28,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🎯 **Multiple Screens**: Create and manage multiple UI screens simultaneously
 - ➕ **New Screen Creation**: Right-click on empty space to create a new screen at that location
 - 📍 **Positioned Screens**: Each screen is positioned absolutely at its creation location
-- 💾 **Persistent Storage**: All screens, conversations, generated content, and camera position/zoom are automatically saved to IndexedDB
+- 💾 **Persistent Storage**: All screens and conversations are saved to Neon PostgreSQL database. Camera position/zoom saved to IndexedDB for client-side state
 - 🔍 **Pan & Zoom Viewport**: Press and drag to pan and scroll to zoom (10% to 100%) the viewport
 - 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
 - 🎨 **Visual Selection**: Screens have a transparent border by default, display a 2px solid blue border when selected, and show a 2px solid blue border on hover when not selected
@@ -137,7 +137,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** developer, **I want** the system to maintain full conversation history (user prompts and assistant responses), **so that** modifications can be made with complete context
 - **As a** developer, **I want** the API to accept conversation history and format it properly for the LLM, **so that** follow-up modifications understand the full context
 - **As a** developer, **I want** the API to validate required environment variables, **so that** configuration errors are caught early
-- **As a** developer, **I want** all screens, conversation data, and camera position/zoom to be persisted in IndexedDB, **so that** users don't lose their work
+- **As a** developer, **I want** screens and dialog entries to be stored in a PostgreSQL database, **so that** data persists across sessions and devices
+- **As a** developer, **I want** the API to use email hash as userId, **so that** user privacy is maintained
 - **As a** user, **I want** generated UIs to use Font Awesome icons via CDN, **so that** icons render correctly without additional setup
 - **As a** user, **I want** generated UIs to use Unsplash images, **so that** mockups include realistic placeholder images
 - **As a** developer, **I want** the AI to have access to an Unsplash image search tool, **so that** it can automatically find and include relevant images in generated UIs
@@ -156,8 +157,11 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Google Gemini (`@ai-sdk/google`)
+- **Database**:
+  - Neon PostgreSQL - Server-side persistence for screens and dialog entries
+  - Prisma ORM - Database access and migrations
 - **Storage**:
-  - IndexedDB (`idb` package) - Client-side persistence
+  - IndexedDB (`idb` package) - Client-side persistence for viewport transform and pending prompts
 - **Icons**:
   - React Icons (FontAwesome) - Used in the application UI
   - Font Awesome 6.5.1 CDN - Used in generated UI mockups
@@ -175,8 +179,16 @@ ui-gen/
 │   │   │   ├── auth/
 │   │   │   │   └── [...nextauth]/
 │   │   │   │       └── route.ts     # Auth.js API route handlers
+│   │   │   ├── screens/
+│   │   │   │   ├── route.ts         # GET, POST /api/screens
+│   │   │   │   └── [id]/
+│   │   │   │       ├── route.ts     # PUT, DELETE /api/screens/:id
+│   │   │   │       └── dialog/
+│   │   │   │           ├── route.ts # GET, POST /api/screens/:id/dialog
+│   │   │   │           └── [dialogId]/
+│   │   │   │               └── route.ts # DELETE /api/screens/:id/dialog/:dialogId
 │   │   │   └── create/
-│   │   │       └── route.ts          # API endpoint for UI generation (protected)
+│   │   │       └── route.ts          # API endpoint for UI generation (deprecated)
 │   │   ├── layout.tsx                # Root layout with SessionProvider
 │   │   ├── page.tsx                  # Home page (viewport management)
 │   │   └── globals.css               # Global styles
@@ -188,7 +200,11 @@ ui-gen/
 │   │   └── Contents.tsx              # Legacy component (example UI)
 │   ├── lib/
 │   │   ├── types.ts                  # TypeScript type definitions
-│   │   ├── storage.ts                # Storage abstraction (IndexedDB)
+│   │   ├── storage.ts                # Storage abstraction (API + IndexedDB)
+│   │   ├── prisma.ts                 # Prisma client singleton
+│   │   ├── auth.ts                   # Auth helpers (getAuthenticatedUser, getOrCreateWorkspace)
+│   │   ├── validations.ts            # Zod validation schemas
+│   │   ├── ui-generation.ts           # Extracted UI generation logic
 │   │   └── utils.ts                  # Utility functions
 │   ├── prompts/
 │   │   └── generate-ui.ts            # System prompt constant for AI generation
@@ -196,6 +212,9 @@ ui-gen/
 │       └── next-auth.d.ts            # NextAuth type definitions
 ├── docs/
 │   └── MEMORY.md                     # Development notes and decisions
+├── prisma/
+│   ├── schema.prisma                 # Prisma schema (Workspace, Screen, DialogEntry)
+│   └── migrations/                   # Database migrations
 └── package.json
 ```
 
@@ -233,7 +252,18 @@ AUTH_SECRET=your_auth_secret_here
 AUTH_URL=http://localhost:3000
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+DATABASE_URL=your_neon_postgresql_connection_string
 ```
+
+4. Setup Neon Database (if not already done):
+   - Install Neon CLI: `npm install -g neonctl` or `brew install neonctl`
+   - Create Neon project: `neonctl projects create --name ui-gen --region-id aws-eu-central-1`
+   - Copy the connection string to `DATABASE_URL` in `.env.local`
+
+5. Run database migrations:
+   ```bash
+   npx prisma migrate dev
+   ```
 
 Get your API keys from:
 
@@ -276,7 +306,12 @@ Get your API keys from:
    - Add `AUTH_URL` (`http://localhost:3000` for local, `https://your-domain.com` for production)
    - Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from step 3)
 
-6. Run the development server:
+6. Generate Prisma Client (if needed):
+   ```bash
+   npx prisma generate
+   ```
+
+7. Run the development server:
 
 ```bash
 npm run dev
@@ -320,9 +355,10 @@ yarn dev
 1. **Right-Click to Create**: Right-click on empty space to show the initial popup (left-click anywhere will dismiss the popup if it's open)
 2. **Select Type**: A small popup will appear at the right-click location with "Create screen" title and a "Mobile app" button
 3. **Enter Prompt**: Click the "Mobile app" button to open the "What you want to create" dialog, then enter your prompt
-4. **Create Screen**: Click the "Create" button - a new screen will be created at that location and start generating immediately
-5. **Cancel**: Left-click anywhere outside the popup/form or select any screen to cancel (your input will be preserved for the next attempt)
-6. **Positioning**: Each new screen is positioned absolutely at the location where you right-clicked, allowing you to organize screens spatially
+4. **Create Screen**: Click the "Create" button - a new screen will be created immediately at that location (you'll see it right away)
+5. **Generation**: The first dialog entry is created automatically and HTML generation starts in the background
+6. **Cancel**: Left-click anywhere outside the popup/form or select any screen to cancel (your input will be preserved for the next attempt)
+7. **Positioning**: Each new screen is positioned absolutely at the location where you right-clicked, allowing you to organize screens spatially
 
 ### Navigating Multiple Screens
 
@@ -375,11 +411,13 @@ yarn dev
 4. **Text Preservation**: If you click outside or dismiss the modify form, your entered text will be preserved - click "Modify" again to continue editing
 5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
 6. The new modification prompt will be added to the history immediately (before generation completes)
-7. A loading spinner will appear while the UI is being regenerated
-8. Once generation completes, the prompt will be updated with the generated HTML
-9. The newly created prompt will be automatically selected, showing its output
-10. You can continue making modifications iteratively - each modification builds on the full conversation history
-11. Each screen maintains its own independent conversation history
+7. API call is made to `POST /api/screens/:id/dialog` with your prompt
+8. The endpoint uses all existing dialog entries to build conversation history for the LLM
+9. A loading spinner will appear while the UI is being regenerated
+10. Once generation completes, the prompt will be updated with the generated HTML
+11. The newly created prompt will be automatically selected, showing its output
+12. You can continue making modifications iteratively - each modification builds on the full conversation history
+13. Each screen maintains its own independent conversation history
 
 ### Creating Arrow Connections
 
@@ -444,32 +482,52 @@ Generated UIs include accessibility best practices:
 
 ### API Design
 
-The `/api/create` endpoint:
+#### RESTful API Endpoints
 
-- **Requires Authentication**: Returns 401 Unauthorized if user is not authenticated (client automatically handles this by saving prompt and triggering auth flow)
-- Accepts a conversation history array (user prompts and assistant responses)
+All endpoints require authentication (OAuth user session).
+
+**Screens:**
+- `GET /api/screens` - List all screens for the authenticated user's workspace
+- `POST /api/screens` - Create a new screen (requires `x`, `y` coordinates)
+- `PUT /api/screens/:id` - Update screen (partial data: `x`, `y`, `selectedPromptIndex`)
+- `DELETE /api/screens/:id` - Delete screen and all associated dialog entries
+
+**Dialog Entries:**
+- `GET /api/screens/:id/dialog` - List all dialog entries for a screen
+- `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically)
+- `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
+
+**Deprecated:**
+- `POST /api/create` - Deprecated endpoint, kept for backward compatibility. Use `POST /api/screens/:id/dialog` instead.
+
+#### Database Schema
+
+- **Workspace**: Each user has a default workspace (identified by email hash + name 'default')
+- **Screen**: Contains position, selectedPromptIndex, and references to dialog entries
+- **DialogEntry**: Contains prompt, generated HTML, title, and timestamp
+
+#### UI Generation
+
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
-- Formats the full conversation history for the LLM, including:
-  - Original user prompts
-  - Previous LLM-generated HTML outputs
-  - New modification requests
+- Formats conversation history from all dialog entries for the LLM
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
 - Supports up to 5 conversation steps (`maxSteps: 5`) for multi-turn interactions and tool calls
-- Provides `findUnsplashImage` tool that allows the AI to:
-  - Search Unsplash for images matching a query string
-  - Return medium-resolution image URLs (`urls.regular`) for use in generated HTML
-  - Automatically log all tool calls with input parameters and results
-- Validates required environment variables (GOOGLE_GENERATIVE_AI_API_KEY and UNSPLASH_ACCESS_KEY)
+- Provides `findUnsplashImage` tool for automatic image search
 - Cleans up markdown code blocks from AI responses
-- Returns clean HTML ready for iframe rendering
-- Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`) at the beginning
+- Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`)
 
-### Authentication
+### Authentication & User Management
 
 - **Auth.js Configuration**: `src/app/api/auth/[...nextauth]/route.ts`
   - Google OAuth provider configuration
   - JWT session strategy
   - Callbacks to include user ID, name, email, and image in session
+- **User Identification**: Uses email hash (SHA-256) as userId for privacy
+  - Email is hashed before storing in database
+  - Each user automatically gets a default workspace
+- **Workspace Management**: `src/lib/auth.ts`
+  - `getAuthenticatedUser()` - Gets authenticated user from session
+  - `getOrCreateWorkspace()` - Auto-creates workspace if user doesn't have one
 - **UserAvatar Component**: `src/components/UserAvatar.tsx`
   - Fixed position in top-right corner (not affected by viewport transforms)
   - Shows default icon when not authenticated
@@ -690,6 +748,7 @@ The `/api/create` endpoint:
 - `AUTH_URL`: Base URL for authentication (`http://localhost:3000` for local development)
 - `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
 - `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
+- `DATABASE_URL`: Neon PostgreSQL connection string (get from Neon dashboard or CLI)
 
 #### Production (Vercel)
 
@@ -699,12 +758,12 @@ Set these in Vercel project settings:
 
 ### AI Model Configuration
 
-The API endpoint uses:
+The UI generation uses:
 
 - Model: `gemini-2.5-flash`
 - Temperature: `0.5` (balanced creativity/consistency)
 
-These can be adjusted in `src/app/api/create/route.ts`
+These can be adjusted in `src/lib/ui-generation.ts`
 
 ## Limitations
 
@@ -726,7 +785,7 @@ These can be adjusted in `src/app/api/create/route.ts`
 
 - [ ] Support for multiple screen sizes
 - [x] Export generated UI to clipboard with prompt history
-- [x] Save/load generated UIs (IndexedDB persistence)
+- [x] Save/load generated UIs (PostgreSQL database persistence)
 - [x] View previous UI versions from history (clickable prompts)
 - [x] Multiple conversation branches/screens
 - [x] Pan and zoom viewport
