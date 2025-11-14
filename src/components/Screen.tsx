@@ -257,12 +257,23 @@ export default function Screen({
 
   const currentPrompt = getCurrentPrompt();
   // Show placeholder when:
-  // 1. Loading is in progress
-  // 2. There's an incomplete conversation point (has prompt but no HTML)
+  // 1. The currently selected conversation point is incomplete (has prompt but no HTML)
+  // 2. There's no selected point and the last point is incomplete
   // 3. Screen exists but has no content yet (newly created screen waiting for first dialog entry)
+  // Note: We check the selected point specifically, not the global isLoading state,
+  // so that switching to previous points with HTML doesn't show placeholder when a new point is loading
+  const isSelectedPointIncomplete =
+    selectedPromptIndex !== null &&
+    conversationPoints[selectedPromptIndex] &&
+    conversationPoints[selectedPromptIndex].prompt &&
+    !conversationPoints[selectedPromptIndex].html;
+  const isLastPointIncomplete =
+    conversationPoints.length > 0 &&
+    conversationPoints[conversationPoints.length - 1].prompt &&
+    !conversationPoints[conversationPoints.length - 1].html;
   const shouldShowPlaceholder =
-    isLoading ||
-    (htmlContent === "" && conversationPoints.length > 0) ||
+    isSelectedPointIncomplete ||
+    (selectedPromptIndex === null && isLastPointIncomplete) ||
     (htmlContent === "" && conversationPoints.length === 0 && screenData !== null);
 
   // Listen for height messages from iframe
@@ -832,12 +843,25 @@ export default function Screen({
                 >
                   {highlights.map((highlight, index) => {
                     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+                      console.log("[Screen] Overlay mousedown", {
+                        screenId: id,
+                        overlayIndex: index,
+                        highlightType: highlight.type,
+                      });
                       e.stopPropagation();
                       if (onOverlayClick) {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const centerX = rect.left + rect.width / 2;
                         const centerY = rect.top + rect.height / 2;
+                        console.log("[Screen] Calling onOverlayClick", {
+                          centerX,
+                          centerY,
+                          screenId: id,
+                          overlayIndex: index,
+                        });
                         onOverlayClick({ x: centerX, y: centerY }, id, index);
+                      } else {
+                        console.warn("[Screen] onOverlayClick is not defined!");
                       }
                     };
 

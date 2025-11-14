@@ -60,6 +60,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       html: entry.html || "",
       title: entry.title,
       timestamp: Number(entry.timestamp),
+      arrows:
+        ((entry as { arrows?: unknown }).arrows as Array<{
+          overlayIndex: number;
+          targetScreenId: string;
+          startPoint?: { x: number; y: number };
+        }>) || [],
     }));
 
     return NextResponse.json(entries);

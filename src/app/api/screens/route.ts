@@ -41,7 +41,12 @@ export async function GET() {
         html: entry.html || "",
         title: entry.title,
         timestamp: Number(entry.timestamp),
-        arrows: [], // Arrows are stored separately, not in DB yet
+        arrows:
+          (entry.arrows as Array<{
+            overlayIndex: number;
+            targetScreenId: string;
+            startPoint?: { x: number; y: number };
+          }>) || [],
       })),
     }));
 

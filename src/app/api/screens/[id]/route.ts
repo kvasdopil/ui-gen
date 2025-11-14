@@ -60,7 +60,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         html: entry.html || "",
         title: entry.title,
         timestamp: Number(entry.timestamp),
-        arrows: [],
+        arrows:
+          (entry.arrows as Array<{
+            overlayIndex: number;
+            targetScreenId: string;
+            startPoint?: { x: number; y: number };
+          }>) || [],
       })),
     };
 

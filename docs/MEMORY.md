@@ -245,6 +245,16 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
     - Clicking on overlay highlights starts arrow creation (calls `onOverlayClick`)
     - Screen drag handler checks for overlay clicks and skips dragging if click is on overlay
     - Prevents screen dragging when clicking on touchable elements - allows link creation instead
+  - **Arrow Creation**: Arrow drawing from touchable overlays
+    - `handleOverlayClick` sets `arrowLine` state and `isMouseDownRef.current = true` to enable mouse move tracking
+    - Global window event listeners (`mousemove`, `mouseup`) attached when `arrowLine` exists to continue drawing even when mouse leaves viewport
+    - `handleMouseUp` ignores `mouseleave` events when `arrowLine` exists (similar to screen dragging) - only terminates on actual `mouseup` events
+    - Viewport is disabled (`disabled={!!draggedScreenId || !!arrowLine}`) during arrow drawing to prevent interference from viewport mouse handlers
+    - Arrow drawing continues smoothly even when mouse moves fast and leaves screen boundaries
+    - **Efficient Persistence**: Arrows are only persisted to database when completed (released over a screen) or removed - no server updates while dragging
+    - **Database Storage**: Arrows are stored as JSON in `DialogEntry.arrows` field in PostgreSQL database, persisted per conversation point
+    - **API Endpoint**: `PUT /api/screens/:id/dialog/:dialogId` endpoint updates arrows for a dialog entry
+    - **Debugging**: Console logging added throughout arrow creation flow (in `Screen.tsx` and `page.tsx`) for troubleshooting - can be removed in production if desired
 - **Gotcha**: `getBoundingClientRect()` returns viewport coordinates affected by CSS transforms, so we use `offsetLeft`/`offsetTop` instead to get positions relative to iframe document
 - **Location**: `src/components/Screen.tsx`, `src/app/page.tsx`
 
@@ -315,10 +325,11 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Auto-creates workspace if user doesn't have one
 
 - **Dialog Entries**: `src/app/api/screens/[id]/dialog/route.ts` and `src/app/api/screens/[id]/dialog/[dialogId]/route.ts`
-  - GET: List all dialog entries for a screen
+  - GET: List all dialog entries for a screen (includes arrows)
   - POST: Create dialog entry (requires prompt, generates HTML automatically)
+  - PUT: Update dialog entry arrows (requires dialogId, updates arrows JSON field only - other fields are immutable)
   - DELETE: Delete dialog entry (requires screen ID and dialog entry ID)
-  - Dialog entries are immutable (no update endpoint)
+  - Dialog entries are mostly immutable (prompt, html, title cannot be updated) - only arrows can be updated via PUT endpoint
   - All endpoints include dialog entry IDs in responses for frontend deletion operations
 
 - **UI Generation**: `src/lib/ui-generation.ts`
@@ -409,7 +420,8 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Highlights selected prompt with blue border and background
   - **Dynamic Labels**: Shows "What you want to create" for empty screens, "What you would like to change" for screens with existing prompts
   - Modification input field with dynamic placeholder text
-  - Ctrl/Cmd+Enter to submit modifications
+  - **Auto-Focus**: Textarea automatically focuses when "Modify" button is clicked, allowing immediate typing
+  - Ctrl/Cmd+Enter to submit modifications (keyboard shortcut support)
   - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` instead of `onClick` to prevent blur event from dismissing the panel when textarea is focused
     - Prevents `onBlur` handler from closing the form before `handleCreate` can execute
     - Ensures form stays open and create action completes successfully
@@ -421,7 +433,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/lib/storage.ts`
 - **Key Features**:
-  - `Storage` interface with `saveScreens`, `saveScreen`, `loadScreens`, `clearScreens`, `deleteScreen`, `deleteDialogEntry`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
+  - `Storage` interface with `saveScreens`, `saveScreen`, `loadScreens`, `clearScreens`, `deleteScreen`, `deleteDialogEntry`, `updateDialogEntryArrows`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
   - `ApiStorage` class implementing API-based storage for screens
   - Uses REST API endpoints for screens and dialog entries
   - Uses IndexedDB for client-side state (viewport transform, pending prompts)
@@ -440,6 +452,10 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - **Deletion Methods**:
     - `deleteScreen(screenId)`: Calls `DELETE /api/screens/:id` to delete screen and all dialog entries (cascade delete)
     - `deleteDialogEntry(screenId, dialogId)`: Calls `DELETE /api/screens/:id/dialog/:dialogId` to delete a single dialog entry
+  - **Arrow Persistence**:
+    - `updateDialogEntryArrows(screenId, dialogId, arrows)`: Calls `PUT /api/screens/:id/dialog/:dialogId` to update arrows for a dialog entry
+    - Arrows are stored as JSON in the database `DialogEntry.arrows` field
+    - Only persisted when arrow is completed (released over a screen) or removed - no updates while dragging
 
 ### Types
 
@@ -455,7 +471,8 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Database Models**:
   - `Workspace`: `{ id: uuid, userId: string (email hash), name: string (default: 'default'), createdAt, updatedAt }`
   - `Screen`: `{ id: uuid, workspaceId: uuid, positionX: float, positionY: float, selectedPromptIndex: int?, createdAt, updatedAt }`
-  - `DialogEntry`: `{ id: uuid, screenId: uuid, prompt: string, html: string?, title: string?, timestamp: bigint, createdAt, updatedAt }`
+  - `DialogEntry`: `{ id: uuid, screenId: uuid, prompt: string, html: string?, title: string?, arrows: json?, timestamp: bigint, createdAt, updatedAt }`
+    - `arrows` field stores array of `ConversationPointArrow` objects as JSON
 
 ## System Prompt
 

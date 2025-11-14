@@ -1,6 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+
+const updateDialogEntrySchema = z.object({
+  arrows: z
+    .array(
+      z.object({
+        overlayIndex: z.number(),
+        targetScreenId: z.string(),
+        startPoint: z
+          .object({
+            x: z.number(),
+            y: z.number(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
+});
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; dialogId: string }> },
+) {
+  try {
+    const user = await getAuthenticatedUser();
+    if (!user.email) {
+      return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
+    }
+    const workspace = await getOrCreateWorkspace(user.email);
+    const { id, dialogId } = await params;
+
+    // Verify screen belongs to user's workspace
+    const screen = await prisma.screen.findFirst({
+      where: {
+        id,
+        workspaceId: workspace.id,
+      },
+    });
+
+    if (!screen) {
+      return NextResponse.json({ error: "Screen not found" }, { status: 404 });
+    }
+
+    // Verify dialog entry belongs to this screen
+    const dialogEntry = await prisma.dialogEntry.findFirst({
+      where: {
+        id: dialogId,
+        screenId: id,
+      },
+    });
+
+    if (!dialogEntry) {
+      return NextResponse.json({ error: "Dialog entry not found" }, { status: 404 });
+    }
+
+    const body = await request.json();
+    const validatedData = updateDialogEntrySchema.parse(body);
+
+    // Update dialog entry with arrows
+    const updatedEntry = await prisma.dialogEntry.update({
+      where: { id: dialogId },
+      data: {
+        ...(validatedData.arrows !== undefined && { arrows: validatedData.arrows }),
+      },
+    });
+
+    return NextResponse.json({
+      id: updatedEntry.id,
+      prompt: updatedEntry.prompt,
+      html: updatedEntry.html || "",
+      title: updatedEntry.title,
+      timestamp: Number(updatedEntry.timestamp),
+      arrows:
+        (updatedEntry.arrows as Array<{
+          overlayIndex: number;
+          targetScreenId: string;
+          startPoint?: { x: number; y: number };
+        }>) || [],
+    });
+  } catch (error) {
+    console.error("Error updating dialog entry:", error);
+    if (error instanceof Error && error.name === "ZodError") {
+      return NextResponse.json({ error: "Invalid request data", details: error }, { status: 400 });
+    }
+    const errorMessage = error instanceof Error ? error.message : "Failed to update dialog entry";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
 
 export async function DELETE(
   request: NextRequest,

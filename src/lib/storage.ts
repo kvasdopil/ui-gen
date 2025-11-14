@@ -29,6 +29,15 @@ export interface Storage {
   clearScreens(): Promise<void>;
   deleteScreen(screenId: string): Promise<void>;
   deleteDialogEntry(screenId: string, dialogId: string): Promise<void>;
+  updateDialogEntryArrows(
+    screenId: string,
+    dialogId: string,
+    arrows: Array<{
+      overlayIndex: number;
+      targetScreenId: string;
+      startPoint?: { x: number; y: number };
+    }>,
+  ): Promise<void>;
   saveViewportTransform(transform: ViewportTransform): Promise<void>;
   loadViewportTransform(): Promise<ViewportTransform | null>;
   savePendingPrompt(
@@ -178,6 +187,32 @@ class ApiStorage implements Storage {
       }
     } catch (error) {
       console.error("Error deleting dialog entry:", error);
+      throw error;
+    }
+  }
+
+  async updateDialogEntryArrows(
+    screenId: string,
+    dialogId: string,
+    arrows: Array<{
+      overlayIndex: number;
+      targetScreenId: string;
+      startPoint?: { x: number; y: number };
+    }>,
+  ): Promise<void> {
+    try {
+      const response = await fetch(`/api/screens/${screenId}/dialog/${dialogId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ arrows }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error updating dialog entry arrows ${dialogId}:`, errorText);
+        throw new Error(`Failed to update dialog entry arrows: ${errorText}`);
+      }
+    } catch (error) {
+      console.error("Error updating dialog entry arrows:", error);
       throw error;
     }
   }

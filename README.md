@@ -43,7 +43,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
 - ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom; clicking on touchable overlays starts link creation instead of dragging the screen
-- 💾 **Persistent Arrows**: Arrows are stored with conversation entry metadata (along with HTML) - each arrow is identified by clickable index and contains target screen ID, automatically saved and restored
+- 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by clickable index and contains target screen ID, automatically saved when completed and restored on page reload
 - 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
 
 ## User Stories
@@ -418,8 +418,9 @@ yarn dev
 2. Click the "Modify" button (ghost style, turns blue on hover) at the bottom of the history
    - For screens with no prompts yet, the label will say "What you want to create" instead of "What you would like to change"
 3. Enter your modification request (or first prompt for empty screens) in the text field
+   - **Auto-Focus**: The text field is automatically focused when you click "Modify" so you can start typing immediately
 4. **Text Preservation**: If you click outside or dismiss the modify form, your entered text will be preserved - click "Modify" again to continue editing
-5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
+5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button to submit
 6. The new modification prompt will be added to the history immediately (before generation completes)
 7. API call is made to `POST /api/screens/:id/dialog` with your prompt
 8. The endpoint uses all existing dialog entries to build conversation history for the LLM
@@ -433,17 +434,19 @@ yarn dev
 
 1. **Enable Clickable Highlights**: Click the hand icon next to a screen's title to show clickable overlays
 2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow - this will NOT drag the screen, it will start link creation instead
-3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor
+3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor and remain visible even when you move the mouse outside the screen boundaries
 4. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
 5. **Cancel**: Release the mouse button outside of any screen to cancel arrow creation
-6. **One Arrow Per Overlay**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
-7. **Persistent Arrows**: Arrows are automatically saved with the conversation entry metadata (along with HTML) - each arrow is identified by its clickable index and contains the target screen ID
-8. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
-9. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
-10. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
-11. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
-12. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
-13. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
+6. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
+7. **One Arrow Per Overlay**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
+8. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
+9. **Efficient Persistence**: Arrows are only saved to the server when you complete or remove them (on mouse release) - no server updates while dragging
+10. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
+11. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
+12. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
+13. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
+14. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
+15. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
 
 ### Example Prompts
 
@@ -517,7 +520,7 @@ All endpoints require authentication (OAuth user session).
 
 - **Workspace**: Each user has a default workspace (identified by email hash + name 'default')
 - **Screen**: Contains position, selectedPromptIndex, and references to dialog entries
-- **DialogEntry**: Contains prompt, generated HTML, title, and timestamp
+- **DialogEntry**: Contains prompt, generated HTML, title, timestamp, and arrows (JSON field storing arrow connections)
 
 #### UI Generation
 
@@ -584,7 +587,8 @@ All endpoints require authentication (OAuth user session).
     - Stores arrows in `ConversationPoint.arrows` array with `overlayIndex` and `targetScreenId`
     - Renders arrows from all conversation points across all screens
     - Uses actual screen height from `ScreenData.height` for boundary calculations
-    - Removes arrows when clicking on overlays to start new arrow creation
+    - Arrows are persisted to database only when completed (released over screen) or removed - no server updates while dragging
+    - Arrows stored in `DialogEntry.arrows` JSON field in PostgreSQL database, loaded on page reload
 - **Screen.tsx**: Individual screen component managing state, conversation history, and API calls
   - Manages conversation points state (prompt, HTML, title, timestamp for each point)
   - Tracks selected prompt index for output history viewing
@@ -612,8 +616,9 @@ All endpoints require authentication (OAuth user session).
     - Arrows use Bezier curves that connect screen boundaries perpendicularly
     - Each overlay can only have one outgoing arrow (new arrows replace old ones)
     - **Persistent Storage**: Arrows are stored in `ConversationPoint.arrows` array along with HTML metadata
-    - Each arrow contains: `overlayIndex` (clickable index) and `targetScreenId` (destination screen)
-    - Arrows are automatically saved with conversation entries and restored on page reload
+    - Each arrow contains: `overlayIndex` (clickable index), `targetScreenId` (destination screen), and optional `startPoint` (relative to screen center)
+    - Arrows are automatically saved to database when completed (via `PUT /api/screens/:id/dialog/:dialogId`) and restored on page reload
+    - Stored as JSON in `DialogEntry.arrows` field in PostgreSQL database
     - Arrows move with screens when you drag them
     - Arrows scale with zoom and maintain consistent curvature
     - **Dynamic Height**: Screen heights are tracked and used for accurate boundary detection (supports screens taller than 844px)

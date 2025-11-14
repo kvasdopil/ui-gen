@@ -142,10 +142,18 @@ export default function Home() {
   const handleMouseMove = useCallback(
     (e: React.MouseEvent | MouseEvent) => {
       // Only handle dragging if mouse button is pressed (check ref for reliable state)
-      if (!isMouseDownRef.current) return;
+      if (!isMouseDownRef.current) {
+        console.log("[page] handleMouseMove: mouse not down, ref:", isMouseDownRef.current);
+        return;
+      }
 
       // Handle arrow line drawing
       if (arrowLine) {
+        console.log("[page] handleMouseMove: updating arrow line", {
+          arrowLine,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        });
         const viewportElement = viewportHandleRef.current?.getElement();
         const rect = viewportElement?.getBoundingClientRect();
         if (rect) {
@@ -174,6 +182,13 @@ export default function Home() {
             ...arrowLine,
             end: { x: endX, y: endY },
           });
+          console.log("[page] Arrow line updated", {
+            endX,
+            endY,
+            hoveredScreenId: hoveredScreenIdRef.current,
+          });
+        } else {
+          console.warn("[page] No viewport rect in handleMouseMove for arrow");
         }
         return; // Don't handle other dragging when drawing arrow
       }
@@ -224,9 +239,15 @@ export default function Home() {
   // Handle mouse up - works with both React events and native MouseEvent
   const handleMouseUp = useCallback(
     (e?: React.MouseEvent | MouseEvent) => {
-      // Ignore mouseleave events when dragging a screen - only terminate on actual mouseup
-      if (e && e.type === "mouseleave" && draggedScreenIdRef.current) {
-        return;
+      // Ignore mouseleave events when dragging a screen or drawing an arrow - only terminate on actual mouseup
+      if (e && e.type === "mouseleave") {
+        if (draggedScreenIdRef.current || arrowLine) {
+          console.log("[page] Ignoring mouseleave event", {
+            draggingScreen: !!draggedScreenIdRef.current,
+            drawingArrow: !!arrowLine,
+          });
+          return;
+        }
       }
 
       // If event is provided, check if clicking on the new screen form itself
@@ -244,6 +265,10 @@ export default function Home() {
 
       // Save arrow when mouse is released (only if connected to a screen)
       if (arrowLine) {
+        console.log("[page] handleMouseUp: arrowLine exists, saving arrow", {
+          arrowLine,
+          hoveredScreenId: hoveredScreenIdRef.current,
+        });
         // Check if mouse is over a screen at release time
         let endScreenId = hoveredScreenIdRef.current;
 
@@ -263,6 +288,10 @@ export default function Home() {
 
         // Only save arrow if connected to a screen
         if (endScreenId) {
+          console.log("[page] Saving arrow to screen", {
+            endScreenId,
+            startScreenId: arrowLine.startScreenId,
+          });
           const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
 
           if (startScreen) {
@@ -323,16 +352,33 @@ export default function Home() {
               handleScreenUpdate(arrowLine.startScreenId, {
                 conversationPoints: updatedConversationPoints,
               });
+
+              // Persist arrows to database
+              const updatedConversationPoint = updatedConversationPoints[conversationPointIndex];
+              if (updatedConversationPoint.id) {
+                storage
+                  .updateDialogEntryArrows(
+                    arrowLine.startScreenId,
+                    updatedConversationPoint.id,
+                    updatedArrows,
+                  )
+                  .catch((error) => {
+                    console.error("Error saving arrows to database:", error);
+                  });
+              }
             }
           }
         }
 
         // Cancel arrow creation (clear state) regardless of whether it was saved
+        console.log("[page] Clearing arrow state", { wasSaved: !!endScreenId });
         setArrowLine(null);
         hoveredScreenIdRef.current = null;
         setIsMouseDown(false);
         isMouseDownRef.current = false;
         return;
+      } else {
+        console.log("[page] handleMouseUp: no arrowLine");
       }
 
       // Left click on empty space now only deselects (popup moved to right-click)
@@ -434,6 +480,33 @@ export default function Home() {
       };
     }
   }, [draggedScreenId, handleMouseMove, handleMouseUp]);
+
+  // Attach global window listeners when drawing arrow to continue even if mouse leaves viewport
+  // Use capture phase to catch events before they can be stopped by other handlers
+  useEffect(() => {
+    if (arrowLine) {
+      // Create wrapper functions that match the expected signature
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        // Only process if mouse button is still down (check ref for reliable state)
+        if (isMouseDownRef.current) {
+          handleMouseMove(e);
+        }
+      };
+      const handleGlobalMouseUp = (e: MouseEvent) => {
+        // Always handle mouse up to ensure arrow creation terminates properly
+        // handleMouseUp will check arrowLine internally
+        handleMouseUp(e);
+      };
+
+      window.addEventListener("mousemove", handleGlobalMouseMove, { capture: true });
+      window.addEventListener("mouseup", handleGlobalMouseUp, { capture: true });
+
+      return () => {
+        window.removeEventListener("mousemove", handleGlobalMouseMove, { capture: true });
+        window.removeEventListener("mouseup", handleGlobalMouseUp, { capture: true });
+      };
+    }
+  }, [arrowLine, handleMouseMove, handleMouseUp]);
 
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
@@ -722,49 +795,18 @@ export default function Home() {
   // Handle overlay click - start arrow from center of clicked overlay
   const handleOverlayClick = useCallback(
     (center: { x: number; y: number }, screenId: string, overlayIndex: number) => {
+      console.log("[page] handleOverlayClick called", { center, screenId, overlayIndex });
       const viewportElement = viewportHandleRef.current?.getElement();
       const rect = viewportElement?.getBoundingClientRect();
+      console.log("[page] Viewport element and rect", { hasElement: !!viewportElement, rect });
       if (rect) {
-        const startScreen = screens.find((s) => s.id === screenId);
-        if (startScreen) {
-          // Find the selected conversation point (or use the last one if none selected)
-          const conversationPointIndex =
-            startScreen.selectedPromptIndex !== null
-              ? startScreen.selectedPromptIndex
-              : startScreen.conversationPoints.length > 0
-                ? startScreen.conversationPoints.length - 1
-                : null;
-
-          if (
-            conversationPointIndex !== null &&
-            conversationPointIndex < startScreen.conversationPoints.length
-          ) {
-            // Get the conversation point
-            const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
-
-            // Remove any existing arrow from the same overlay
-            const existingArrows = conversationPoint.arrows || [];
-            const filteredArrows = existingArrows.filter(
-              (arrow) => arrow.overlayIndex !== overlayIndex,
-            );
-
-            // Update the conversation point to remove the arrow
-            const updatedConversationPoints = [...startScreen.conversationPoints];
-            updatedConversationPoints[conversationPointIndex] = {
-              ...conversationPoint,
-              arrows: filteredArrows,
-            };
-
-            // Update the screen
-            handleScreenUpdate(screenId, {
-              conversationPoints: updatedConversationPoints,
-            });
-          }
-        }
+        // Don't remove existing arrow yet - only remove when arrow is actually created or cancelled
+        // This prevents unnecessary server updates when just starting to drag
 
         // Convert from viewport (browser window) coordinates to viewport container coordinates
         const startX = center.x - rect.left;
         const startY = center.y - rect.top;
+        console.log("[page] Setting arrowLine", { startX, startY, screenId, overlayIndex });
         setArrowLine({
           start: { x: startX, y: startY },
           end: { x: startX, y: startY },
@@ -772,9 +814,16 @@ export default function Home() {
           overlayIndex,
         });
         setIsMouseDown(true);
+        isMouseDownRef.current = true; // Set ref so handleMouseMove can track arrow drawing
+        console.log("[page] Set isMouseDown and ref", {
+          isMouseDown: true,
+          refValue: isMouseDownRef.current,
+        });
+      } else {
+        console.warn("[page] No viewport rect available!");
       }
     },
-    [screens, handleScreenUpdate],
+    [],
   );
 
   // Effect to center screen after selection - DISABLED
@@ -850,7 +899,7 @@ export default function Home() {
       <UserAvatar />
       <Viewport
         ref={viewportHandleRef}
-        disabled={!!draggedScreenId}
+        disabled={!!draggedScreenId || !!arrowLine}
         onPanStart={() => {
           // Cancel new screen mode if active when panning starts
           if (isNewScreenMode) {

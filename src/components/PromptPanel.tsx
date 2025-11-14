@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { FaCopy, FaDownload, FaEdit, FaMagic } from "react-icons/fa";
 import { MdDeleteOutline, MdMoreVert } from "react-icons/md";
 import { Button } from "@/components/ui/button";
@@ -53,11 +53,23 @@ export default function PromptPanel({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = usePersistentState<string>(`promptEdit-${screenId}`, "", 300);
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleModify = () => {
     setIsEditing(true);
     // Don't clear editValue - preserve any previously entered text
+    // Focus will be handled by useEffect when isEditing changes
   };
+
+  // Auto-focus textarea when editing mode is enabled
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      // Use setTimeout to ensure the textarea is rendered before focusing
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
+    }
+  }, [isEditing]);
 
   const handleCreate = () => {
     if (!editValue.trim()) return;
@@ -232,6 +244,7 @@ ${html}`;
                 : "What you would like to change"}
             </Label>
             <Textarea
+              ref={textareaRef}
               id="modify-textarea"
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}

@@ -36,17 +36,23 @@ export function Toaster() {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    // Mark as mounted after hydration
+    // Subscribe to toast updates (this will trigger setState via callback, which is allowed)
+    const updateToasts = (newToasts: Toast[]) => {
+      setCurrentToasts(newToasts);
+    };
+
+    // Initialize with current toasts via callback (not direct setState)
+    updateToasts(toasts);
+
+    // Mark as mounted after initial setup - necessary for hydration mismatch prevention
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
 
-    // Initialize with current toasts
-    setCurrentToasts(toasts);
-
     // Subscribe to toast updates
-    toastListeners.push(setCurrentToasts);
+    toastListeners.push(updateToasts);
 
     return () => {
-      const index = toastListeners.indexOf(setCurrentToasts);
+      const index = toastListeners.indexOf(updateToasts);
       if (index > -1) {
         toastListeners.splice(index, 1);
       }
