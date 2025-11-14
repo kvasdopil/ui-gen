@@ -1088,14 +1088,12 @@ export default function Home() {
               // If there are invalid arrows, update the screen
               if (validArrows.length !== arrows.length && point.id) {
                 // Update database asynchronously
-                storage
-                  .updateDialogEntryArrows(screen.id, point.id, validArrows)
-                  .catch((error) => {
-                    console.error(
-                      `Error cleaning up invalid arrows for dialog entry ${point.id}:`,
-                      error,
-                    );
-                  });
+                storage.updateDialogEntryArrows(screen.id, point.id, validArrows).catch((error) => {
+                  console.error(
+                    `Error cleaning up invalid arrows for dialog entry ${point.id}:`,
+                    error,
+                  );
+                });
               }
 
               return {
@@ -1223,8 +1221,7 @@ export default function Home() {
                 : undefined;
               // Check if arrow is active (related to selected screen)
               const isActive =
-                selectedScreenId === arrowLine.startScreenId ||
-                selectedScreenId === endScreenId;
+                selectedScreenId === arrowLine.startScreenId || selectedScreenId === endScreenId;
               return (
                 <>
                   <ArrowLine
@@ -1262,48 +1259,48 @@ export default function Home() {
                   .map((arrow, arrowIndex) => {
                     const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
 
-                  // Calculate start point: use stored startPoint if available, otherwise use screen center
-                  const startContentX = arrow.startPoint
-                    ? screen.position!.x + arrow.startPoint.x
-                    : screen.position!.x;
-                  const startContentY = arrow.startPoint
-                    ? screen.position!.y + arrow.startPoint.y
-                    : screen.position!.y;
+                    // Calculate start point: use stored startPoint if available, otherwise use screen center
+                    const startContentX = arrow.startPoint
+                      ? screen.position!.x + arrow.startPoint.x
+                      : screen.position!.x;
+                    const startContentY = arrow.startPoint
+                      ? screen.position!.y + arrow.startPoint.y
+                      : screen.position!.y;
 
-                  // End point is target screen center
-                  const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
-                  const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
+                    // End point is target screen center
+                    const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
+                    const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
 
-                  const startScreenBounds = {
-                    x: screen.position!.x,
-                    y: screen.position!.y,
-                    width: 390,
-                    height: screen.height || 844,
-                  };
-                  const endScreenBounds = endScreen?.position
-                    ? {
-                        x: endScreen.position.x,
-                        y: endScreen.position.y,
-                        width: 390,
-                        height: endScreen.height || 844,
-                      }
-                    : undefined;
+                    const startScreenBounds = {
+                      x: screen.position!.x,
+                      y: screen.position!.y,
+                      width: 390,
+                      height: screen.height || 844,
+                    };
+                    const endScreenBounds = endScreen?.position
+                      ? {
+                          x: endScreen.position.x,
+                          y: endScreen.position.y,
+                          width: 390,
+                          height: endScreen.height || 844,
+                        }
+                      : undefined;
 
-                  // Check if arrow is active (related to selected screen)
-                  const isActive =
-                    selectedScreenId === screen.id || selectedScreenId === endScreen?.id;
-                  return (
-                    <ArrowLine
-                      key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
-                      start={{ x: startContentX, y: startContentY }}
-                      end={{ x: endContentX, y: endContentY }}
-                      startScreenBounds={startScreenBounds}
-                      endScreenBounds={endScreenBounds}
-                      isActive={isActive}
-                      markerId={`arrow-${screen.id}-${arrow.targetScreenId}-${conversationPointIndex}-${arrowIndex}`}
-                    />
-                  );
-                });
+                    // Check if arrow is active (related to selected screen)
+                    const isActive =
+                      selectedScreenId === screen.id || selectedScreenId === endScreen?.id;
+                    return (
+                      <ArrowLine
+                        key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
+                        start={{ x: startContentX, y: startContentY }}
+                        end={{ x: endContentX, y: endContentY }}
+                        startScreenBounds={startScreenBounds}
+                        endScreenBounds={endScreenBounds}
+                        isActive={isActive}
+                        markerId={`arrow-${screen.id}-${arrow.targetScreenId}-${conversationPointIndex}-${arrowIndex}`}
+                      />
+                    );
+                  });
               },
             );
           })}

@@ -59,7 +59,10 @@ export async function GET() {
               data: { arrows: validArrows },
             })
             .catch((error) => {
-              console.error(`Error cleaning up invalid arrows for dialog entry ${entry.id}:`, error);
+              console.error(
+                `Error cleaning up invalid arrows for dialog entry ${entry.id}:`,
+                error,
+              );
             });
         }
 

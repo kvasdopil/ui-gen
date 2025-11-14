@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 interface ArrowLineProps {
   start: { x: number; y: number }; // Content coordinates
   end: { x: number; y: number }; // Content coordinates
@@ -241,7 +243,10 @@ export default function ArrowLine({
   // Use dark gray for active arrows, lighter gray for inactive
   const strokeColor = isActive ? "#6b7280" : "#d1d5db";
   // Use provided markerId or generate a unique one
-  const uniqueMarkerId = markerId || `arrowhead-${Math.random().toString(36).substring(2, 11)}`;
+  const [generatedMarkerId] = useState(
+    () => `arrowhead-${Math.random().toString(36).substring(2, 11)}`,
+  );
+  const uniqueMarkerId = markerId || generatedMarkerId;
 
   return (
     <svg
