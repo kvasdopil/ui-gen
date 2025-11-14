@@ -32,12 +32,16 @@ export function toast(message: string) {
 }
 
 export function Toaster() {
-  const [currentToasts, setCurrentToasts] = useState<Toast[]>(() => {
-    // Initialize with current toasts if available
-    return typeof window !== "undefined" ? toasts : [];
-  });
+  const [currentToasts, setCurrentToasts] = useState<Toast[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
+    // Mark as mounted after hydration
+    setIsMounted(true);
+
+    // Initialize with current toasts
+    setCurrentToasts(toasts);
+
     // Subscribe to toast updates
     toastListeners.push(setCurrentToasts);
 
@@ -49,8 +53,8 @@ export function Toaster() {
     };
   }, []);
 
-  // Don't render during SSR - check document directly
-  if (typeof document === "undefined") {
+  // Don't render until after hydration to avoid mismatch
+  if (!isMounted || typeof document === "undefined") {
     return null;
   }
 
@@ -71,4 +75,3 @@ export function Toaster() {
     document.body,
   );
 }
-

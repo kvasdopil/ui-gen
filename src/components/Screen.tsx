@@ -30,7 +30,7 @@ export default function Screen({
   id,
   isSelected,
   onScreenClick,
-  onCreate,
+  onCreate, // eslint-disable-line @typescript-eslint/no-unused-vars
   onUpdate,
   onDelete,
   onClone,
@@ -236,6 +236,35 @@ export default function Screen({
         ? conversationPoints[conversationPoints.length - 1].title
         : null;
 
+  // Get the current prompt being generated (for placeholder display)
+  const getCurrentPrompt = (): string | null => {
+    // Get the prompt from the incomplete conversation point
+    if (selectedPromptIndex !== null && conversationPoints[selectedPromptIndex]) {
+      const point = conversationPoints[selectedPromptIndex];
+      if (!point.html && point.prompt) {
+        return point.prompt;
+      }
+    }
+    // Check last point if no selection or selected point has HTML
+    if (conversationPoints.length > 0) {
+      const lastPoint = conversationPoints[conversationPoints.length - 1];
+      if (!lastPoint.html && lastPoint.prompt) {
+        return lastPoint.prompt;
+      }
+    }
+    return null;
+  };
+
+  const currentPrompt = getCurrentPrompt();
+  // Show placeholder when:
+  // 1. Loading is in progress
+  // 2. There's an incomplete conversation point (has prompt but no HTML)
+  // 3. Screen exists but has no content yet (newly created screen waiting for first dialog entry)
+  const shouldShowPlaceholder =
+    isLoading ||
+    (htmlContent === "" && conversationPoints.length > 0) ||
+    (htmlContent === "" && conversationPoints.length === 0 && screenData !== null);
+
   // Listen for height messages from iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -427,20 +456,6 @@ export default function Screen({
     }
   }, [screenData, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Convert conversation points to history format for API
-  // Only include points that have HTML (completed generations)
-  const conversationPointsToHistory = (points: ConversationPoint[]) => {
-    const history: Array<{ type: "user" | "assistant"; content: string }> = [];
-    for (const point of points) {
-      // Only include completed conversation points (those with HTML)
-      if (point.html) {
-        history.push({ type: "user", content: point.prompt });
-        history.push({ type: "assistant", content: point.html });
-      }
-    }
-    return history;
-  };
-
   const handleSend = async (modificationPrompt: string, existingTimestamp?: number) => {
     if (!modificationPrompt.trim()) return;
     const promptToSend = modificationPrompt;
@@ -497,7 +512,13 @@ export default function Screen({
     setIsLoading(true);
     try {
       let response: Response;
-      let data: { html: string; id?: string; prompt?: string; title?: string | null; timestamp?: number };
+      let data: {
+        html: string;
+        id?: string;
+        prompt?: string;
+        title?: string | null;
+        timestamp?: number;
+      };
 
       if (screenData) {
         // Update existing screen - add dialog entry
@@ -530,9 +551,10 @@ export default function Screen({
       const title = data.title || extractTitle(data.html);
 
       // Create the completed conversation point with HTML and title
-      // Preserve the original timestamp from the incomplete point
+      // Preserve the original timestamp from the incomplete point and the ID from the API
       const completedPoint: ConversationPoint = {
-        prompt: promptToSend,
+        id: data.id,
+        prompt: data.prompt || promptToSend,
         html: data.html,
         title,
         timestamp: data.timestamp || timestampToUse,
@@ -615,13 +637,25 @@ export default function Screen({
   };
 
   // Handle conversation point deletion
-  const handleDeletePoint = (pointIndex: number) => {
+  const handleDeletePoint = async (pointIndex: number) => {
     if (pointIndex < 0 || pointIndex >= conversationPoints.length) return;
+
+    const pointToDelete = conversationPoints[pointIndex];
 
     // If it's the last remaining point, delete the entire screen
     if (conversationPoints.length === 1) {
       onDelete(id);
       return;
+    }
+
+    // Delete from backend if the point has an ID
+    if (pointToDelete.id) {
+      try {
+        await storage.deleteDialogEntry(id, pointToDelete.id);
+      } catch (error) {
+        console.error("Error deleting dialog entry:", error);
+        // Continue with local state update even if API call fails
+      }
     }
 
     // Remove the point at the specified index
@@ -698,7 +732,7 @@ export default function Screen({
       {/* Wrapper for Screen and Input - positioned relative to each other */}
       <div className="relative">
         {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
-        {isSelected && conversationPoints.length > 0 && (
+        {isSelected && screenData && (
           <PromptPanel
             conversationPoints={conversationPoints}
             onSend={handleSend}
@@ -721,10 +755,11 @@ export default function Screen({
         {/* Screen Container with Iframe */}
         <div
           ref={containerRef}
-          className={`relative inline-block shadow-lg transition-all select-none ${isSelected
-            ? "border-2 border-blue-500"
-            : "border-2 border-transparent hover:border-blue-500"
-            }`}
+          className={`relative inline-block shadow-lg transition-all select-none ${
+            isSelected
+              ? "border-2 border-blue-500"
+              : "border-2 border-transparent hover:border-blue-500"
+          }`}
           style={{
             pointerEvents: isSelected ? "auto" : "auto", // Always allow clicks for selection
             cursor: isSelected ? "default" : "pointer",
@@ -742,18 +777,26 @@ export default function Screen({
             }
           }}
         >
-          {/* Loading Spinner Overlay - only covers Screen component */}
-          {isLoading && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-              <div className="flex flex-col items-center gap-4 rounded-lg bg-white px-8 py-6 shadow-xl dark:bg-gray-800">
-                <FaSpinner className="h-8 w-8 animate-spin text-blue-500" />
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Generating UI...
-                </p>
+          {shouldShowPlaceholder ? (
+            <div
+              className="flex h-full w-full flex-col items-center justify-center bg-white dark:bg-gray-900"
+              style={{
+                width: "390px",
+                minHeight: "844px",
+                height: `${iframeHeight}px`,
+              }}
+            >
+              <div className="flex flex-col items-center gap-4">
+                <FaSpinner className="text-primary h-8 w-8 animate-spin" />
+                <p className="text-primary text-base font-medium">Creating UI</p>
+                {currentPrompt && (
+                  <p className="text-muted-foreground max-w-[320px] text-center text-xs">
+                    {currentPrompt}
+                  </p>
+                )}
               </div>
             </div>
-          )}
-          {htmlContent ? (
+          ) : htmlContent ? (
             <>
               <iframe
                 ref={(el) => {

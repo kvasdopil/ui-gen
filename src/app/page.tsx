@@ -25,19 +25,20 @@ export default function Home() {
   const [screens, setScreens] = useState<ScreenData[]>([]);
   const [isLoadingScreens, setIsLoadingScreens] = useState(true);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
-  const screensSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const screenSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUpdatedScreenIdRef = useRef<string | null>(null);
+  const hasCompletedInitialLoadRef = useRef<boolean>(false);
   const [isMouseDown, setIsMouseDown] = useState(false);
+  // Track mouse button state with a ref for reliable tracking even when mouse leaves viewport
+  const isMouseDownRef = useRef(false);
   const [draggedScreenId, setDraggedScreenId] = useState<string | null>(null);
+  const draggedScreenIdRef = useRef<string | null>(null);
   const [screenDragStart, setScreenDragStart] = useState({ x: 0, y: 0, screenX: 0, screenY: 0 });
   const [isDraggingScreen, setIsDraggingScreen] = useState(false);
   const justFinishedDraggingRef = useRef<string | null>(null);
   const [isCreateScreenPopupMode, setIsCreateScreenPopupMode] = useState(false);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
-  const [newScreenInput, setNewScreenInput] = usePersistentState<string>(
-    "newScreenInput",
-    "",
-    300,
-  );
+  const [newScreenInput, setNewScreenInput] = usePersistentState<string>("newScreenInput", "", 300);
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
   const createScreenPopupRef = useRef<HTMLDivElement>(null);
@@ -78,9 +79,10 @@ export default function Home() {
     // If clicking on a screen container, check if it's an overlay click first
     if (screenContainer) {
       // Check if clicking on an overlay element (touchable/clickable highlight)
-      const isOverlayClick = target.hasAttribute("data-overlay-highlight") || 
-                             target.closest("[data-overlay-highlight]") !== null;
-      
+      const isOverlayClick =
+        target.hasAttribute("data-overlay-highlight") ||
+        target.closest("[data-overlay-highlight]") !== null;
+
       if (isOverlayClick) {
         // Don't start screen drag, let the overlay handle it (which will start link creation)
         return;
@@ -106,8 +108,10 @@ export default function Home() {
             screenY: screen.position.y,
           });
           setDraggedScreenId(screenId);
+          draggedScreenIdRef.current = screenId; // Track with ref for reliable state
           setIsDraggingScreen(false); // Not dragging yet, just potential
           setIsMouseDown(true);
+          isMouseDownRef.current = true; // Track with ref for reliable state
         }
         return;
       }
@@ -130,210 +134,234 @@ export default function Home() {
         setIsNewScreenMode(false);
       }
       setIsMouseDown(true);
+      isMouseDownRef.current = true; // Track with ref for reliable state
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    // Only handle dragging if mouse button is pressed
-    if (!isMouseDown) return;
+  // Handle mouse move - works with both React events and native MouseEvent
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent | MouseEvent) => {
+      // Only handle dragging if mouse button is pressed (check ref for reliable state)
+      if (!isMouseDownRef.current) return;
 
-    // Handle arrow line drawing
-    if (arrowLine) {
-      const viewportElement = viewportHandleRef.current?.getElement();
-      const rect = viewportElement?.getBoundingClientRect();
-      if (rect) {
-        const endX = e.clientX - rect.left;
-        const endY = e.clientY - rect.top;
+      // Handle arrow line drawing
+      if (arrowLine) {
+        const viewportElement = viewportHandleRef.current?.getElement();
+        const rect = viewportElement?.getBoundingClientRect();
+        if (rect) {
+          const endX = e.clientX - rect.left;
+          const endY = e.clientY - rect.top;
 
-        // Check if mouse is over a screen (but not the start screen)
-        // Use elementFromPoint to get the element at mouse position, as e.target might be a child
-        const elementAtPoint =
-          typeof document !== "undefined"
-            ? document.elementFromPoint(e.clientX, e.clientY)
-            : null;
-        const screenContainer = elementAtPoint?.closest(
-          "[data-screen-container]",
-        ) as HTMLElement | null;
-        const hoveredScreenId = screenContainer?.id || null;
+          // Check if mouse is over a screen (but not the start screen)
+          // Use elementFromPoint to get the element at mouse position, as e.target might be a child
+          const elementAtPoint =
+            typeof document !== "undefined"
+              ? document.elementFromPoint(e.clientX, e.clientY)
+              : null;
+          const screenContainer = elementAtPoint?.closest(
+            "[data-screen-container]",
+          ) as HTMLElement | null;
+          const hoveredScreenId = screenContainer?.id || null;
 
-        // Only update hovered screen if it's different from start screen
-        if (hoveredScreenId && hoveredScreenId !== arrowLine.startScreenId) {
-          hoveredScreenIdRef.current = hoveredScreenId;
-        } else {
-          hoveredScreenIdRef.current = null;
+          // Only update hovered screen if it's different from start screen
+          if (hoveredScreenId && hoveredScreenId !== arrowLine.startScreenId) {
+            hoveredScreenIdRef.current = hoveredScreenId;
+          } else {
+            hoveredScreenIdRef.current = null;
+          }
+
+          setArrowLine({
+            ...arrowLine,
+            end: { x: endX, y: endY },
+          });
         }
-
-        setArrowLine({
-          ...arrowLine,
-          end: { x: endX, y: endY },
-        });
+        return; // Don't handle other dragging when drawing arrow
       }
-      return; // Don't handle other dragging when drawing arrow
-    }
 
-    // Handle screen dragging
-    if (draggedScreenId) {
-      const screen = screens.find((s) => s.id === draggedScreenId);
-      if (screen && screen.position) {
-        // Calculate mouse movement delta in viewport coordinates
-        const deltaX = e.clientX - screenDragStart.x;
-        const deltaY = e.clientY - screenDragStart.y;
+      // Handle screen dragging
+      if (draggedScreenId) {
+        const screen = screens.find((s) => s.id === draggedScreenId);
+        if (screen && screen.position) {
+          // Calculate mouse movement delta in viewport coordinates
+          const deltaX = e.clientX - screenDragStart.x;
+          const deltaY = e.clientY - screenDragStart.y;
 
-        // Check if mouse moved significantly (more than 5px) to consider it a drag
-        const movedSignificantly = Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5;
+          // Check if mouse moved significantly (more than 5px) to consider it a drag
+          const movedSignificantly = Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5;
 
-        if (movedSignificantly && !isDraggingScreen) {
-          // User started dragging the screen
-          setIsDraggingScreen(true);
-        }
+          if (movedSignificantly && !isDraggingScreen) {
+            // User started dragging the screen
+            setIsDraggingScreen(true);
+          }
 
-        // Only update position if we're actually dragging
-        if (isDraggingScreen) {
-          // Get current transform from viewport
-          const transform = viewportHandleRef.current?.getTransform();
-          if (transform) {
-            // Convert delta to content coordinates (accounting for scale)
-            const contentDeltaX = deltaX / transform.scale;
-            const contentDeltaY = deltaY / transform.scale;
+          // Only update position if we're actually dragging
+          if (isDraggingScreen) {
+            // Get current transform from viewport
+            const transform = viewportHandleRef.current?.getTransform();
+            if (transform) {
+              // Convert delta to content coordinates (accounting for scale)
+              const contentDeltaX = deltaX / transform.scale;
+              const contentDeltaY = deltaY / transform.scale;
 
-            // Calculate new screen position and snap to grid
-            const newX = snapToGrid(screenDragStart.screenX + contentDeltaX);
-            const newY = snapToGrid(screenDragStart.screenY + contentDeltaY);
+              // Calculate new screen position and snap to grid
+              const newX = snapToGrid(screenDragStart.screenX + contentDeltaX);
+              const newY = snapToGrid(screenDragStart.screenY + contentDeltaY);
 
-            // Update screen position
-            handleScreenUpdate(draggedScreenId, {
-              position: { x: newX, y: newY },
-            });
+              // Update screen position
+              handleScreenUpdate(draggedScreenId, {
+                position: { x: newX, y: newY },
+              });
+            }
           }
         }
+        return; // Don't handle panning when potentially dragging a screen
       }
-      return; // Don't handle panning when potentially dragging a screen
-    }
-  };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isMouseDown, arrowLine, draggedScreenId, screenDragStart, isDraggingScreen, screens],
+  );
 
-  const handleMouseUp = (e?: React.MouseEvent) => {
-    // If event is provided, check if clicking on the new screen form itself
-    if (e) {
-      const target = e.target as HTMLElement;
-      if (newScreenFormRef.current?.contains(target)) {
-        setIsMouseDown(false);
-        setDraggedScreenId(null);
-        setArrowLine(null);
+  // Handle mouse up - works with both React events and native MouseEvent
+  const handleMouseUp = useCallback(
+    (e?: React.MouseEvent | MouseEvent) => {
+      // Ignore mouseleave events when dragging a screen - only terminate on actual mouseup
+      if (e && e.type === "mouseleave" && draggedScreenIdRef.current) {
         return;
       }
-    }
 
-    // Save arrow when mouse is released (only if connected to a screen)
-    if (arrowLine) {
-      // Check if mouse is over a screen at release time
-      let endScreenId = hoveredScreenIdRef.current;
-
-      // Double-check by looking at the element at mouse position if event is available
-      if (e && !endScreenId && typeof document !== "undefined") {
-        const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
-        const screenContainer = elementAtPoint?.closest(
-          "[data-screen-container]",
-        ) as HTMLElement | null;
-        endScreenId = screenContainer?.id || null;
-
-        // Only allow if it's a different screen from the start
-        if (endScreenId === arrowLine.startScreenId) {
-          endScreenId = null;
+      // If event is provided, check if clicking on the new screen form itself
+      if (e && "target" in e) {
+        const target = e.target as HTMLElement;
+        if (newScreenFormRef.current?.contains(target)) {
+          setIsMouseDown(false);
+          isMouseDownRef.current = false;
+          setDraggedScreenId(null);
+          draggedScreenIdRef.current = null;
+          setArrowLine(null);
+          return;
         }
       }
 
-      // Only save arrow if connected to a screen
-      if (endScreenId) {
-        const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+      // Save arrow when mouse is released (only if connected to a screen)
+      if (arrowLine) {
+        // Check if mouse is over a screen at release time
+        let endScreenId = hoveredScreenIdRef.current;
 
-        if (startScreen) {
-          // Find the selected conversation point (or use the last one if none selected)
-          const conversationPointIndex =
-            startScreen.selectedPromptIndex !== null
-              ? startScreen.selectedPromptIndex
-              : startScreen.conversationPoints.length > 0
-                ? startScreen.conversationPoints.length - 1
-                : null;
+        // Double-check by looking at the element at mouse position if event is available
+        if (e && !endScreenId && typeof document !== "undefined") {
+          const elementAtPoint = document.elementFromPoint(e.clientX, e.clientY);
+          const screenContainer = elementAtPoint?.closest(
+            "[data-screen-container]",
+          ) as HTMLElement | null;
+          endScreenId = screenContainer?.id || null;
 
-          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
-            // Get the conversation point
-            const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
-
-            // Initialize arrows array if it doesn't exist
-            const existingArrows = conversationPoint.arrows || [];
-
-            // Remove any existing arrow from the same overlay index
-            const filteredArrows = existingArrows.filter(
-              (arrow) => arrow.overlayIndex !== arrowLine.overlayIndex,
-            );
-
-            // Convert start point from viewport coordinates to content coordinates relative to start screen center
-            const viewportToContent = viewportHandleRef.current?.viewportToContent;
-            if (!viewportToContent) return;
-            const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
-            const startContentX = startContent.x;
-            const startContentY = startContent.y;
-            // Relative to screen center
-            const startRelativeX = startScreen.position
-              ? startContentX - startScreen.position.x
-              : 0;
-            const startRelativeY = startScreen.position
-              ? startContentY - startScreen.position.y
-              : 0;
-
-            // Add the new arrow
-            const newArrow: ConversationPointArrow = {
-              overlayIndex: arrowLine.overlayIndex,
-              targetScreenId: endScreenId,
-              startPoint: { x: startRelativeX, y: startRelativeY },
-            };
-
-            const updatedArrows = [...filteredArrows, newArrow];
-
-            // Update the conversation point with the new arrows array
-            const updatedConversationPoints = [...startScreen.conversationPoints];
-            updatedConversationPoints[conversationPointIndex] = {
-              ...conversationPoint,
-              arrows: updatedArrows,
-            };
-
-            // Update the screen with the updated conversation points
-            handleScreenUpdate(arrowLine.startScreenId, {
-              conversationPoints: updatedConversationPoints,
-            });
+          // Only allow if it's a different screen from the start
+          if (endScreenId === arrowLine.startScreenId) {
+            endScreenId = null;
           }
         }
+
+        // Only save arrow if connected to a screen
+        if (endScreenId) {
+          const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+
+          if (startScreen) {
+            // Find the selected conversation point (or use the last one if none selected)
+            const conversationPointIndex =
+              startScreen.selectedPromptIndex !== null
+                ? startScreen.selectedPromptIndex
+                : startScreen.conversationPoints.length > 0
+                  ? startScreen.conversationPoints.length - 1
+                  : null;
+
+            if (
+              conversationPointIndex !== null &&
+              conversationPointIndex < startScreen.conversationPoints.length
+            ) {
+              // Get the conversation point
+              const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
+
+              // Initialize arrows array if it doesn't exist
+              const existingArrows = conversationPoint.arrows || [];
+
+              // Remove any existing arrow from the same overlay index
+              const filteredArrows = existingArrows.filter(
+                (arrow) => arrow.overlayIndex !== arrowLine.overlayIndex,
+              );
+
+              // Convert start point from viewport coordinates to content coordinates relative to start screen center
+              const viewportToContent = viewportHandleRef.current?.viewportToContent;
+              if (!viewportToContent) return;
+              const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
+              const startContentX = startContent.x;
+              const startContentY = startContent.y;
+              // Relative to screen center
+              const startRelativeX = startScreen.position
+                ? startContentX - startScreen.position.x
+                : 0;
+              const startRelativeY = startScreen.position
+                ? startContentY - startScreen.position.y
+                : 0;
+
+              // Add the new arrow
+              const newArrow: ConversationPointArrow = {
+                overlayIndex: arrowLine.overlayIndex,
+                targetScreenId: endScreenId,
+                startPoint: { x: startRelativeX, y: startRelativeY },
+              };
+
+              const updatedArrows = [...filteredArrows, newArrow];
+
+              // Update the conversation point with the new arrows array
+              const updatedConversationPoints = [...startScreen.conversationPoints];
+              updatedConversationPoints[conversationPointIndex] = {
+                ...conversationPoint,
+                arrows: updatedArrows,
+              };
+
+              // Update the screen with the updated conversation points
+              handleScreenUpdate(arrowLine.startScreenId, {
+                conversationPoints: updatedConversationPoints,
+              });
+            }
+          }
+        }
+
+        // Cancel arrow creation (clear state) regardless of whether it was saved
+        setArrowLine(null);
+        hoveredScreenIdRef.current = null;
+        setIsMouseDown(false);
+        isMouseDownRef.current = false;
+        return;
       }
 
-      // Cancel arrow creation (clear state) regardless of whether it was saved
-      setArrowLine(null);
-      hoveredScreenIdRef.current = null;
+      // Left click on empty space now only deselects (popup moved to right-click)
+
+      // Handle screen click vs drag
+      if (draggedScreenId) {
+        if (isDraggingScreen) {
+          // User dragged the screen - prevent selection
+          justFinishedDraggingRef.current = draggedScreenId;
+          // Clear after a short delay to allow click handler to check
+          setTimeout(() => {
+            justFinishedDraggingRef.current = null;
+          }, 100);
+        } else {
+          // User just clicked (didn't drag) - select the screen
+          handleScreenClick(draggedScreenId);
+        }
+      }
+
+      // Reset drag and click tracking
       setIsMouseDown(false);
-      return;
-    }
-
-    // Left click on empty space now only deselects (popup moved to right-click)
-
-    // Handle screen click vs drag
-    if (draggedScreenId) {
-      if (isDraggingScreen) {
-        // User dragged the screen - prevent selection
-        justFinishedDraggingRef.current = draggedScreenId;
-        // Clear after a short delay to allow click handler to check
-        setTimeout(() => {
-          justFinishedDraggingRef.current = null;
-        }, 100);
-      } else {
-        // User just clicked (didn't drag) - select the screen
-        handleScreenClick(draggedScreenId);
-      }
-    }
-
-    // Reset drag and click tracking
-    setIsMouseDown(false);
-    setIsDraggingScreen(false);
-    setDraggedScreenId(null);
-  };
+      isMouseDownRef.current = false; // Clear ref state
+      setIsDraggingScreen(false);
+      setDraggedScreenId(null);
+      draggedScreenIdRef.current = null; // Clear ref state
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [arrowLine, screens, draggedScreenId, isDraggingScreen],
+  );
 
   // Handle right-click to show new screen menu
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -376,6 +404,36 @@ export default function Home() {
     }
   };
 
+  // Attach global window listeners when dragging to continue drag even if mouse leaves viewport
+  // Attach as soon as draggedScreenId is set (not just when isDraggingScreen is true)
+  // This ensures we catch mouse movement even if it leaves the viewport before the 5px threshold
+  // Use capture phase to catch events before they can be stopped by other handlers
+  useEffect(() => {
+    if (draggedScreenId) {
+      // Create wrapper functions that match the expected signature
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        // Only process if mouse button is still down (check ref for reliable state)
+        if (isMouseDownRef.current && draggedScreenIdRef.current) {
+          handleMouseMove(e);
+        }
+      };
+      const handleGlobalMouseUp = (e: MouseEvent) => {
+        // Always handle mouse up to ensure drag terminates properly
+        // Only process if we're actually dragging this screen (check ref for reliable state)
+        if (draggedScreenIdRef.current) {
+          handleMouseUp(e);
+        }
+      };
+
+      window.addEventListener("mousemove", handleGlobalMouseMove, { capture: true });
+      window.addEventListener("mouseup", handleGlobalMouseUp, { capture: true });
+
+      return () => {
+        window.removeEventListener("mousemove", handleGlobalMouseMove, { capture: true });
+        window.removeEventListener("mouseup", handleGlobalMouseUp, { capture: true });
+      };
+    }
+  }, [draggedScreenId, handleMouseMove, handleMouseUp]);
 
   // Center and zoom to 100% when a screen is selected
   const centerAndZoomScreen = useCallback(
@@ -413,8 +471,7 @@ export default function Home() {
             // screenRect is in document coordinates, so subtract viewportRect to get viewport-relative
             const screenCenterXViewport =
               screenRect.left + screenRect.width / 2 - viewportRect.left;
-            const screenCenterYViewport =
-              screenRect.top + screenRect.height / 2 - viewportRect.top;
+            const screenCenterYViewport = screenRect.top + screenRect.height / 2 - viewportRect.top;
 
             // Convert to content coordinates
             screenCenterXContent =
@@ -490,7 +547,7 @@ export default function Home() {
     const viewportElement = viewportHandleRef.current?.getElement();
     const viewportToContent = viewportHandleRef.current?.viewportToContent;
     if (!viewportElement || !viewportToContent) return;
-    
+
     const rect = viewportElement.getBoundingClientRect();
     // Convert from browser viewport coordinates to viewport container coordinates
     const viewportX = newScreenPosition.x - rect.left;
@@ -526,58 +583,29 @@ export default function Home() {
 
       const newScreen: ScreenData = await screenResponse.json();
 
-      // Add screen immediately with empty conversation points so it appears right away
-      setScreens((prevScreens) => [...prevScreens, newScreen]);
+      // Add incomplete conversation point immediately so placeholder can show the prompt
+      const timestamp = Date.now();
+      const screenWithIncompletePoint: ScreenData = {
+        ...newScreen,
+        conversationPoints: [
+          {
+            prompt,
+            html: "",
+            title: null,
+            timestamp,
+            arrows: [],
+          },
+        ],
+        selectedPromptIndex: 0,
+      };
+
+      // Add screen immediately with incomplete conversation point so it appears right away
+      // The Screen component's auto-generation effect will handle creating the dialog entry
+      setScreens((prevScreens) => [...prevScreens, screenWithIncompletePoint]);
 
       // Close the form and clear input
       setIsNewScreenMode(false);
       setNewScreenInput("");
-
-      // Step 2: Create first dialog entry (this will generate HTML)
-      try {
-        const dialogResponse = await fetch(`/api/screens/${newScreen.id}/dialog`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
-        });
-
-        if (!dialogResponse.ok) {
-          if (dialogResponse.status === 401) {
-            // Save prompt for restoration after auth
-            await storage.savePendingPrompt(prompt, newScreen.id, null);
-            signIn("google", { callbackUrl: window.location.href });
-            return;
-          }
-          throw new Error("Failed to create dialog entry");
-        }
-
-        const dialogEntry = await dialogResponse.json();
-
-        // Update screen with the new dialog entry
-        setScreens((prevScreens) =>
-          prevScreens.map((screen) => {
-            if (screen.id === newScreen.id) {
-              return {
-                ...screen,
-                conversationPoints: [
-                  {
-                    prompt: dialogEntry.prompt,
-                    html: dialogEntry.html,
-                    title: dialogEntry.title,
-                    timestamp: dialogEntry.timestamp,
-                    arrows: [],
-                  },
-                ],
-                selectedPromptIndex: 0,
-              };
-            }
-            return screen;
-          }),
-        );
-      } catch (error) {
-        console.error("Error creating dialog entry:", error);
-        // Screen is already created, so user can see it even if dialog creation fails
-      }
 
       // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
       // centerAndZoomScreen(newScreen.id);
@@ -589,6 +617,11 @@ export default function Home() {
 
   // Handle screen update
   const handleScreenUpdate = useCallback((screenId: string, updates: Partial<ScreenData>) => {
+    // Track which screen was updated for efficient saving (only if position or selectedPromptIndex changed)
+    if (updates.position || updates.selectedPromptIndex !== undefined) {
+      lastUpdatedScreenIdRef.current = screenId;
+    }
+
     // Use functional update to avoid race conditions when multiple screens update simultaneously
     setScreens((prevScreens) => {
       const screenIndex = prevScreens.findIndex((s) => s.id === screenId);
@@ -634,11 +667,23 @@ export default function Home() {
 
   // Handle screen deletion
   const handleScreenDelete = useCallback(
-    (screenId: string) => {
-      setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
-      // Deselect if the deleted screen was selected
-      if (selectedScreenId === screenId) {
-        setSelectedScreenId(null);
+    async (screenId: string) => {
+      try {
+        // Delete from backend
+        await storage.deleteScreen(screenId);
+        // Update local state
+        setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
+        // Deselect if the deleted screen was selected
+        if (selectedScreenId === screenId) {
+          setSelectedScreenId(null);
+        }
+      } catch (error) {
+        console.error("Error deleting screen:", error);
+        // Still update local state to provide immediate feedback
+        setScreens((prevScreens) => prevScreens.filter((s) => s.id !== screenId));
+        if (selectedScreenId === screenId) {
+          setSelectedScreenId(null);
+        }
       }
     },
     [selectedScreenId],
@@ -662,9 +707,9 @@ export default function Home() {
         selectedPromptIndex: pointIndex,
         position: originalScreen.position
           ? {
-            x: snapToGrid(originalScreen.position.x + 50),
-            y: snapToGrid(originalScreen.position.y + 50),
-          }
+              x: snapToGrid(originalScreen.position.x + 50),
+              y: snapToGrid(originalScreen.position.y + 50),
+            }
           : { x: snapToGrid(50), y: snapToGrid(50) },
       };
 
@@ -690,7 +735,10 @@ export default function Home() {
                 ? startScreen.conversationPoints.length - 1
                 : null;
 
-          if (conversationPointIndex !== null && conversationPointIndex < startScreen.conversationPoints.length) {
+          if (
+            conversationPointIndex !== null &&
+            conversationPointIndex < startScreen.conversationPoints.length
+          ) {
             // Get the conversation point
             const conversationPoint = startScreen.conversationPoints[conversationPointIndex];
 
@@ -749,6 +797,8 @@ export default function Home() {
         console.error("Error loading data:", error);
       } finally {
         setIsLoadingScreens(false);
+        // Mark initial load as complete
+        hasCompletedInitialLoadRef.current = true;
       }
     };
 
@@ -757,29 +807,43 @@ export default function Home() {
 
   // Save screens to storage whenever they change (debounced to prevent race conditions)
   useEffect(() => {
-    if (!isLoadingScreens && screens.length >= 0) {
-      // Clear existing timeout
-      if (screensSaveTimeoutRef.current) {
-        clearTimeout(screensSaveTimeoutRef.current);
-      }
+    // Don't save during initial load - wait until load is complete
+    // Only save when we know a specific screen was updated (tracked by lastUpdatedScreenIdRef)
+    if (!isLoadingScreens && hasCompletedInitialLoadRef.current && screens.length >= 0) {
+      const updatedScreenId = lastUpdatedScreenIdRef.current;
+      if (updatedScreenId) {
+        // Clear existing timeout for individual screen save
+        if (screenSaveTimeoutRef.current) {
+          clearTimeout(screenSaveTimeoutRef.current);
+        }
 
-      // Debounce save by 300ms to batch rapid updates and prevent race conditions
-      screensSaveTimeoutRef.current = setTimeout(() => {
-        storage.saveScreens(screens).catch((error) => {
-          console.error("Error saving screens:", error);
-        });
-      }, 300);
+        // Find the updated screen
+        const updatedScreen = screens.find((s) => s.id === updatedScreenId);
+        if (updatedScreen) {
+          // Debounce save by 300ms to batch rapid updates and prevent race conditions
+          screenSaveTimeoutRef.current = setTimeout(() => {
+            storage.saveScreen(updatedScreen).catch((error) => {
+              console.error("Error saving screen:", error);
+            });
+            // Clear the ref after saving
+            lastUpdatedScreenIdRef.current = null;
+          }, 300);
+        } else {
+          // Screen not found, clear the ref (don't save)
+          lastUpdatedScreenIdRef.current = null;
+        }
+      }
+      // If no specific screen is tracked, don't save (prevents saving on initial load)
     }
 
-    // Cleanup timeout on unmount
+    // Cleanup timeouts on unmount
     return () => {
-      if (screensSaveTimeoutRef.current) {
-        clearTimeout(screensSaveTimeoutRef.current);
+      const screenSaveTimeout = screenSaveTimeoutRef.current;
+      if (screenSaveTimeout) {
+        clearTimeout(screenSaveTimeout);
       }
     };
   }, [screens, isLoadingScreens]);
-
-
 
   return (
     <>
@@ -824,19 +888,19 @@ export default function Home() {
 
               const startScreenBounds = startScreen?.position
                 ? {
-                  x: startScreen.position.x,
-                  y: startScreen.position.y,
-                  width: 390,
-                  height: startScreen.height || 844,
-                }
+                    x: startScreen.position.x,
+                    y: startScreen.position.y,
+                    width: 390,
+                    height: startScreen.height || 844,
+                  }
                 : undefined;
               const endScreenBounds = endScreen?.position
                 ? {
-                  x: endScreen.position.x,
-                  y: endScreen.position.y,
-                  width: 390,
-                  height: endScreen.height || 844,
-                }
+                    x: endScreen.position.x,
+                    y: endScreen.position.y,
+                    width: 390,
+                    height: endScreen.height || 844,
+                  }
                 : undefined;
               return (
                 <ArrowLine
@@ -851,49 +915,51 @@ export default function Home() {
           {screens.flatMap((screen) => {
             if (!screen.position) return [];
 
-            return screen.conversationPoints.flatMap((conversationPoint, conversationPointIndex) => {
-              const arrows = conversationPoint.arrows || [];
-              return arrows.map((arrow, arrowIndex) => {
-                const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+            return screen.conversationPoints.flatMap(
+              (conversationPoint, conversationPointIndex) => {
+                const arrows = conversationPoint.arrows || [];
+                return arrows.map((arrow, arrowIndex) => {
+                  const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
 
-                // Calculate start point: use stored startPoint if available, otherwise use screen center
-                const startContentX = arrow.startPoint
-                  ? screen.position!.x + arrow.startPoint.x
-                  : screen.position!.x;
-                const startContentY = arrow.startPoint
-                  ? screen.position!.y + arrow.startPoint.y
-                  : screen.position!.y;
+                  // Calculate start point: use stored startPoint if available, otherwise use screen center
+                  const startContentX = arrow.startPoint
+                    ? screen.position!.x + arrow.startPoint.x
+                    : screen.position!.x;
+                  const startContentY = arrow.startPoint
+                    ? screen.position!.y + arrow.startPoint.y
+                    : screen.position!.y;
 
-                // End point is target screen center
-                const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
-                const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
+                  // End point is target screen center
+                  const endContentX = endScreen?.position ? endScreen.position.x : startContentX;
+                  const endContentY = endScreen?.position ? endScreen.position.y : startContentY;
 
-                const startScreenBounds = {
-                  x: screen.position!.x,
-                  y: screen.position!.y,
-                  width: 390,
-                  height: screen.height || 844,
-                };
-                const endScreenBounds = endScreen?.position
-                  ? {
-                    x: endScreen.position.x,
-                    y: endScreen.position.y,
+                  const startScreenBounds = {
+                    x: screen.position!.x,
+                    y: screen.position!.y,
                     width: 390,
-                    height: endScreen.height || 844,
-                  }
-                  : undefined;
+                    height: screen.height || 844,
+                  };
+                  const endScreenBounds = endScreen?.position
+                    ? {
+                        x: endScreen.position.x,
+                        y: endScreen.position.y,
+                        width: 390,
+                        height: endScreen.height || 844,
+                      }
+                    : undefined;
 
-                return (
-                  <ArrowLine
-                    key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
-                    start={{ x: startContentX, y: startContentY }}
-                    end={{ x: endContentX, y: endContentY }}
-                    startScreenBounds={startScreenBounds}
-                    endScreenBounds={endScreenBounds}
-                  />
-                );
-              });
-            });
+                  return (
+                    <ArrowLine
+                      key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
+                      start={{ x: startContentX, y: startContentY }}
+                      end={{ x: endContentX, y: endContentY }}
+                      startScreenBounds={startScreenBounds}
+                      endScreenBounds={endScreenBounds}
+                    />
+                  );
+                });
+              },
+            );
           })}
           {!isLoadingScreens && screens.length === 0 && (
             <div
@@ -924,10 +990,7 @@ export default function Home() {
                   top: screen.position ? `${screen.position.y}px` : "0px",
                   transform: "translate(-50%, -50%)",
                   zIndex,
-                  cursor:
-                    isDraggingScreen && draggedScreenId === screen.id
-                      ? "grabbing"
-                      : "grab",
+                  cursor: isDraggingScreen && draggedScreenId === screen.id ? "grabbing" : "grab",
                 }}
               >
                 <Screen

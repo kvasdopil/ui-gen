@@ -3,7 +3,7 @@ import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createScreenSchema } from "@/lib/validations";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const user = await getAuthenticatedUser();
     if (!user.email) {
@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       },
       selectedPromptIndex: screen.selectedPromptIndex,
       conversationPoints: screen.dialogEntries.map((entry) => ({
+        id: entry.id,
         prompt: entry.prompt,
         html: entry.html || "",
         title: entry.title,
@@ -94,4 +95,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

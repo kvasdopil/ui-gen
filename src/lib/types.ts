@@ -5,6 +5,7 @@ export type ConversationPointArrow = {
 };
 
 export type ConversationPoint = {
+  id?: string; // Dialog entry ID from database (optional for backward compatibility)
   prompt: string;
   html: string;
   title: string | null;

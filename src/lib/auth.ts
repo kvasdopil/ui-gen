@@ -47,4 +47,3 @@ export async function getOrCreateWorkspace(email: string) {
 
   return workspace;
 }
-

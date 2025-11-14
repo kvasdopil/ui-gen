@@ -51,11 +51,17 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Reason**: Reusability and separation of concerns
 - **Location**: `src/components/PromptPanel.tsx`
 
-### 6. Loading State
+### 6. Loading State & Placeholder Screen
 
-- **Decision**: Loading spinner only covers Screen component, not entire page
-- **Reason**: User can still see and interact with prompt panel during generation
-- **Location**: `src/components/Screen.tsx` (overlay inside Screen container)
+- **Decision**: Show placeholder screen with spinner, "Creating UI" text, and user prompt while generation is in progress
+- **Reason**: Provides better visual feedback and shows what's being generated
+- **Implementation**:
+  - Placeholder shows when `isLoading` is true OR when there's an incomplete conversation point (has prompt but no HTML)
+  - Placeholder also shows when screen exists but has no content yet (newly created screen waiting for first dialog entry)
+  - Displays spinner in primary color, "Creating UI" text in primary color, and user prompt in smaller grey text
+  - Maintains minimal screen size (390px × 844px) during loading
+  - Replaces iframe content during generation
+- **Location**: `src/components/Screen.tsx`
 
 ### 7. Data Persistence
 
@@ -79,7 +85,8 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **Decision**: Store conversation points (prompt, HTML, title, timestamp) instead of separate history and HTML
 - **Reason**: Better organization, stores complete metadata for each conversation point
-- **Structure**: `ConversationPoint` type with `prompt`, `html`, `title`, `timestamp`
+- **Structure**: `ConversationPoint` type with `prompt`, `html`, `title`, `timestamp`, `id?` (optional dialog entry ID from database)
+- **ID Field**: Added optional `id` field to store dialog entry IDs from database for deletion operations
 - **Location**: `src/lib/types.ts`
 
 ### 9. Screen Creation Flow
@@ -105,8 +112,8 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 ### 10. Draggable Screens
 
-- **Decision**: Allow all screens (selected and unselected) to be dragged for repositioning
-- **Reason**: Enables spatial organization of screens without requiring deselection
+- **Decision**: Allow all screens (selected and unselected) to be dragged for repositioning, with robust handling that continues even when mouse leaves viewport
+- **Reason**: Enables spatial organization of screens without requiring deselection, and provides smooth dragging experience even with fast mouse movements
 - **Implementation**:
   - Track `draggedScreenId` and `isDraggingScreen` state to distinguish between click and drag
   - Only mark as dragging after mouse moves >5px to allow clicks to select
@@ -119,7 +126,14 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
     - Overlay elements have `data-overlay-highlight` attribute for identification
     - Overlay highlights have `pointerEvents: "auto"` to receive mouse events
     - If clicking on overlay, skip screen drag and let overlay handler start link creation instead
-- **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`
+  - **Robust Drag Handling**: Screen dragging continues even when mouse moves fast and leaves viewport boundaries
+    - Uses refs (`isMouseDownRef`, `draggedScreenIdRef`) for reliable state tracking that persists even when React events stop firing
+    - Attaches global window event listeners (`mousemove`, `mouseup`) with capture phase when `draggedScreenId` is set
+    - Global listeners use capture phase (`{ capture: true }`) to catch events before other handlers can stop them
+    - Viewport's `handleMouseLeave` and `handleMouseUp` check `disabled` prop and return early when dragging a screen
+    - Page's `handleMouseUp` ignores `mouseleave` events when dragging a screen - only terminates on actual `mouseup` events
+    - This ensures drag only terminates when user releases mouse button, not when mouse leaves viewport
+- **Location**: `src/app/page.tsx`, `src/components/Viewport.tsx`, `src/components/Screen.tsx`
 
 ### 11. Camera Position Persistence
 
@@ -303,13 +317,18 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Dialog Entries**: `src/app/api/screens/[id]/dialog/route.ts` and `src/app/api/screens/[id]/dialog/[dialogId]/route.ts`
   - GET: List all dialog entries for a screen
   - POST: Create dialog entry (requires prompt, generates HTML automatically)
-  - DELETE: Delete dialog entry
+  - DELETE: Delete dialog entry (requires screen ID and dialog entry ID)
   - Dialog entries are immutable (no update endpoint)
+  - All endpoints include dialog entry IDs in responses for frontend deletion operations
 
 - **UI Generation**: `src/lib/ui-generation.ts`
   - Extracted reusable function `generateUIFromHistory()`
   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
   - Uses `gemini-2.5-flash` model with temperature 0.5
+  - Provides `findUnsplashImage` tool for automatic image search
+    - Tool includes validation to ensure query parameter is always provided (non-empty string)
+    - Gracefully falls back to generation without tools if tool calls fail
+    - Wrapped in try-catch that retries generation without tools on error
   - Cleans markdown code blocks from response
   - Returns HTML with title metadata comment (`<!-- Title: ... -->`)
 
@@ -371,8 +390,9 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - Uses `generationInProgressRef` with screen ID + timestamp key to prevent duplicate API calls
   - Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
   - **Auth Flow Preservation**: When API returns 401, saves prompt and screenId to storage, triggers sign-in, and auto-retries after auth
-  - Displays "No content" message when screen has no HTML
-  - Shows PromptPanel only when screen is selected
+  - Displays placeholder screen with spinner, "Creating UI" text, and user prompt when generation is in progress or when screen has no content yet
+  - Shows "No content" message only when screen has no prompts and is not loading
+  - Shows PromptPanel when screen is selected (even if it has no conversation points yet)
   - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
     - Highlights `<a>` elements with `href` attribute in magenta
     - Highlights `<button>` elements in cyan
@@ -385,21 +405,23 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **File**: `src/components/PromptPanel.tsx`
 - **Key Features**:
-  - Displays conversation points (prompts) as clickable cards
+  - Displays conversation points (prompts) as clickable cards (or shows empty state with just "Modify" button for screens with no prompts)
   - Highlights selected prompt with blue border and background
-  - Modification input field with label "What you would like to change"
+  - **Dynamic Labels**: Shows "What you want to create" for empty screens, "What you would like to change" for screens with existing prompts
+  - Modification input field with dynamic placeholder text
   - Ctrl/Cmd+Enter to submit modifications
   - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` instead of `onClick` to prevent blur event from dismissing the panel when textarea is focused
     - Prevents `onBlur` handler from closing the form before `handleCreate` can execute
     - Ensures form stays open and create action completes successfully
   - Positioned absolutely to the right of Screen component
   - Uses `left-full ml-2` for positioning
+  - Always shows "Modify" button, even for screens with no conversation points yet
 
 ### Storage
 
 - **File**: `src/lib/storage.ts`
 - **Key Features**:
-  - `Storage` interface with `saveScreens`, `loadScreens`, `clearScreens`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
+  - `Storage` interface with `saveScreens`, `saveScreen`, `loadScreens`, `clearScreens`, `deleteScreen`, `deleteDialogEntry`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
   - `ApiStorage` class implementing API-based storage for screens
   - Uses REST API endpoints for screens and dialog entries
   - Uses IndexedDB for client-side state (viewport transform, pending prompts)
@@ -408,15 +430,23 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
     - `viewportTransform` with key `"current"` storing ViewportTransform
     - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
   - Auto-saves screens to API whenever they change (debounced by 300ms)
+  - **Optimized Screen Saving**: `saveScreen(screen)` method saves only a single screen, while `saveScreens(screens)` saves all screens
+    - `page.tsx` tracks which screen was updated via `lastUpdatedScreenIdRef` when position or selectedPromptIndex changes
+    - Only the specific updated screen is saved, not all screens - prevents unnecessary API calls when moving screens
+    - Uses `hasCompletedInitialLoadRef` to prevent saving during initial page load
   - Auto-saves viewport transform with 500ms debounce
   - Auto-loads screens from API on mount
   - Pending prompts are saved when auth is required and loaded after authentication
+  - **Deletion Methods**:
+    - `deleteScreen(screenId)`: Calls `DELETE /api/screens/:id` to delete screen and all dialog entries (cascade delete)
+    - `deleteDialogEntry(screenId, dialogId)`: Calls `DELETE /api/screens/:id/dialog/:dialogId` to delete a single dialog entry
 
 ### Types
 
 - **File**: `src/lib/types.ts`
 - **Key Types**:
-  - `ConversationPoint`: `{ prompt: string, html: string, title: string | null, timestamp: number, arrows?: ConversationPointArrow[] }`
+  - `ConversationPoint`: `{ id?: string, prompt: string, html: string, title: string | null, timestamp: number, arrows?: ConversationPointArrow[] }`
+    - `id` field is optional and stores dialog entry ID from database (used for deletion operations)
   - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number }, height?: number }`
 - **File**: `src/lib/storage.ts`
 - **Key Types**:
@@ -466,6 +496,13 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Issue**: Scripts won't run without proper sandbox permissions
 - **Workaround**: Use `sandbox="allow-same-origin allow-scripts"`
 - **Location**: `src/components/Screen.tsx` (iframe element)
+
+### 4. Toaster Hydration Mismatch
+
+- **Issue**: Toaster component caused hydration errors because it rendered differently on server vs client
+- **Workaround**: Use `isMounted` state that starts as `false` and is set to `true` in `useEffect` (which only runs on client after hydration)
+- **Implementation**: Component returns `null` during SSR and initial render, only renders portal after `isMounted` is `true`
+- **Location**: `src/components/ui/toast.tsx`
 
 ## Dependencies
 
@@ -536,21 +573,24 @@ interface PromptPanelProps {
 3. User clicks "Mobile app" button to open the prompt dialog form
 4. User enters prompt and clicks "Create"
 5. **Step 1**: Screen is created via `POST /api/screens` (with x, y coordinates)
-   - Screen appears immediately with empty conversation points
+   - Screen appears immediately with incomplete conversation point (prompt but no HTML)
+   - Placeholder screen shows with spinner, "Creating UI" text, and user prompt
    - Screen ID is returned right away
-6. **Step 2**: First dialog entry is created via `POST /api/screens/:id/dialog` (with prompt)
+6. **Step 2**: Screen component's auto-generation effect detects incomplete point and creates first dialog entry via `POST /api/screens/:id/dialog` (with prompt)
    - API endpoint uses `generateUIFromHistory()` from `src/lib/ui-generation.ts`
    - Converts existing dialog entries to history format (none for first entry)
    - Calls Gemini API via Vercel AI SDK
+   - If tool calls fail, retries generation without tools
    - Cleans markdown code blocks
    - Returns dialog entry with HTML and title metadata
 7. `Screen` component:
-   - Updates with the new dialog entry
+   - Replaces incomplete conversation point with completed one
    - Extracts title from HTML metadata (`<!-- Title: ... -->`)
    - Displays title above the screen
    - Wraps HTML with document structure
    - Injects Tailwind CDN
    - Sets `srcDoc` on iframe
+   - Placeholder is replaced with actual UI
 8. Screen data is automatically saved to database via API
 9. Iframe renders the generated UI
 
@@ -605,12 +645,13 @@ interface PromptPanelProps {
 - Empty state: When no screens exist, displays "Click anywhere to create your first screen" message at 0,0 in viewport coordinates (centered on first load)
 - HTML wrapper uses simplified CSS/JS: CSS sets min-height on html, body, and body > \*; JavaScript calculates and sends height via postMessage
 - PromptPanel is positioned absolutely relative to Screen component wrapper
-- Loading spinner only covers Screen, not the entire page
+- Placeholder screen replaces iframe content during generation, showing spinner, "Creating UI" text, and user prompt
+- PromptPanel shows even for screens with no conversation points yet, allowing users to add the first prompt
 - Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
 - UI generation logic is extracted to `src/lib/ui-generation.ts` as reusable function `generateUIFromHistory()`
 - The UI generation function automatically cleans markdown code blocks - don't duplicate this logic
 - Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - uses API for screens, IndexedDB for client state
-- Screens are auto-saved to database via API on every change, auto-loaded from API on mount
+- Screens are auto-saved to database via API when they change (only the specific screen that was updated), auto-loaded from API on mount
 - Viewport transform (camera position and zoom) is auto-saved to IndexedDB with 500ms debounce, auto-loaded on mount
 - Database: Neon PostgreSQL with Prisma ORM (see `prisma/schema.prisma`)
 - User identification: Email hash (SHA-256) used as userId for privacy (see `src/lib/auth.ts` - `hashEmail()` function)
@@ -623,15 +664,24 @@ interface PromptPanelProps {
 - Workspace auto-creation: Use `getOrCreateWorkspace()` from `src/lib/auth.ts` to get or create user's workspace
 - Deprecated endpoint: `/api/create` is deprecated but kept for backward compatibility
 - New screens are NOT auto-selected or auto-centered to prevent viewport disruption
+- Placeholder screen: Shows when `isLoading` is true OR when there's an incomplete conversation point OR when screen exists but has no content yet
+- Tool call error handling: `findUnsplashImage` tool includes validation and graceful fallback - if tool calls fail, generation retries without tools
+- Empty screen support: PromptPanel shows even when screen has no conversation points, with "Modify" button to add first prompt
 - Z-index: Newer screens appear above older ones; selected screens always on top
 - Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations using screen ID + timestamp key
 - Race condition prevention: `handleScreenUpdate` uses functional updates to always work with latest state
 - Storage debouncing: Screen saves are debounced by 300ms to batch rapid updates and prevent race conditions
+- Optimized screen saving: Only the specific screen that was updated (position or selectedPromptIndex) is saved to the API, not all screens - prevents unnecessary API calls when moving screens
+  - `handleScreenUpdate` tracks which screen was updated via `lastUpdatedScreenIdRef` when position or selectedPromptIndex changes
+  - Save effect in `page.tsx` checks `lastUpdatedScreenIdRef` and only saves that specific screen using `storage.saveScreen()`
+  - If no specific screen is tracked, no save occurs (prevents saving on initial load or unrelated updates)
+- Initial load protection: `hasCompletedInitialLoadRef` prevents saving during initial page load to avoid unnecessary update calls
 - Position preservation: Screen positions are always preserved during updates unless explicitly changed
 - Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
 - No default screen - page starts empty, user clicks to create first screen
-- Screen dragging: Unselected screens can be dragged; panning is disabled during drag; selected screens are non-draggable
+- Screen dragging: All screens (selected and unselected) can be dragged; panning is disabled during drag; dragging continues even when mouse leaves viewport boundaries
 - Drag detection: Only mark as dragging after >5px movement to allow clicks to select; prevent panning as soon as `draggedScreenId` is set
+- Robust drag handling: Uses refs for state tracking and global window event listeners with capture phase to ensure drag only terminates on actual mouse up, not on mouse leave
 - Camera persistence: Viewport transform is persisted to IndexedDB in `viewportTransform` object store with key `"current"`
 - New screen creation: Two-click behavior - first click deselects, second click shows initial popup; two-step flow: CreateScreenPopup with "Mobile app" button → prompt dialog form
 - CreateScreenPopup component: Separate component for initial screen type selection; uses forwardRef for click-outside detection; ghost button style with icon and label
@@ -640,3 +690,9 @@ interface PromptPanelProps {
 - UserAvatar positioning: Fixed position (`fixed top-4 right-4`) outside viewport-content div to avoid transform effects; prevents event propagation to avoid viewport interference
 - OAuth environment variables: Must not have trailing newlines when setting via Vercel CLI (use `echo -n`); `AUTH_URL` must match production domain exactly
 - Auth flow preservation: When 401 occurs, prompt and screenId are saved to IndexedDB; after auth, screen is selected and generation auto-retries; pending prompts are cleared after restoration
+- Deletion functionality: Screens and conversation points can be deleted from the UI, and deletions are persisted to the database
+  - Screen deletion: `handleScreenDelete` in `page.tsx` calls `storage.deleteScreen()` which calls `DELETE /api/screens/:id`
+  - Conversation point deletion: `handleDeletePoint` in `Screen.tsx` calls `storage.deleteDialogEntry()` which calls `DELETE /api/screens/:id/dialog/:dialogId`
+  - Dialog entry IDs are included in API responses and preserved in `ConversationPoint.id` field for deletion operations
+  - Deletions update local state immediately for responsive UI, then persist to database via API calls
+- Toast notifications: Custom toast system in `src/components/ui/toast.tsx` - uses `isMounted` state to prevent hydration mismatches (returns `null` during SSR, only renders after client-side hydration completes)

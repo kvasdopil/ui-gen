@@ -51,11 +51,7 @@ export default function PromptPanel({
   getHtmlForPoint,
 }: PromptPanelProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = usePersistentState<string>(
-    `promptEdit-${screenId}`,
-    "",
-    300,
-  );
+  const [editValue, setEditValue] = usePersistentState<string>(`promptEdit-${screenId}`, "", 300);
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null);
 
   const handleModify = () => {
@@ -123,9 +119,7 @@ export default function PromptPanel({
         .filter((prompt) => prompt.trim());
 
       // Format the prompt history comment
-      const promptHistory = prompts
-        .map((prompt) => `(${prompt})`)
-        .join("\n\n--\n\n");
+      const promptHistory = prompts.map((prompt) => `(${prompt})`).join("\n\n--\n\n");
 
       // Create the formatted HTML with prompt history comment
       const formattedHtml = `<!-- 
@@ -160,10 +154,11 @@ ${html}`;
             <div key={index} className="group flex items-center gap-1">
               <Card
                 onClick={() => onPromptSelect(index)}
-                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${selectedPromptIndex === index
-                  ? "border-primary bg-accent text-primary peer-hover:border-destructive peer-hover:bg-destructive/10"
-                  : "hover:border-primary hover:bg-accent peer-hover:border-destructive peer-hover:bg-destructive/10"
-                  }`}
+                className={`flex-1 cursor-pointer px-3 py-2 text-xs transition-colors ${
+                  selectedPromptIndex === index
+                    ? "border-primary bg-accent text-primary peer-hover:border-destructive peer-hover:bg-destructive/10"
+                    : "hover:border-primary hover:bg-accent peer-hover:border-destructive peer-hover:bg-destructive/10"
+                }`}
               >
                 {point.prompt}
               </Card>
@@ -232,7 +227,9 @@ ${html}`;
         {isEditing ? (
           <div className="flex flex-col gap-2">
             <Label htmlFor="modify-textarea" className="text-xs">
-              What you would like to change
+              {conversationPoints.length === 0
+                ? "What you want to create"
+                : "What you would like to change"}
             </Label>
             <Textarea
               id="modify-textarea"
@@ -240,9 +237,13 @@ ${html}`;
               onChange={(e) => setEditValue(e.target.value)}
               onKeyDown={handleKeyPress}
               onBlur={handleBlur}
-              placeholder="Describe the modification..."
+              placeholder={
+                conversationPoints.length === 0
+                  ? "Describe the UI you want..."
+                  : "Describe the modification..."
+              }
               rows={4}
-              className="text-xs bg-secondary dark:bg-secondary"
+              className="bg-secondary dark:bg-secondary text-xs"
               disabled={isLoading}
             />
             <Button

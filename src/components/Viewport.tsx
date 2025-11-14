@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, ReactNode, forwardRef, useImperativeHandle } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  ReactNode,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ViewportTransform } from "@/lib/storage";
 
@@ -23,21 +31,11 @@ interface ViewportProps {
 }
 
 const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
-  {
-    children,
-    onPanStart,
-    onPanEnd,
-    onTransformChange,
-    disabled = false,
-    onContextMenu,
-  },
+  { children, onPanStart, onPanEnd, onTransformChange, disabled = false, onContextMenu },
   ref,
 ) {
-  const [viewportTransform, setViewportTransform, hasLoaded] = usePersistentState<ViewportTransform>(
-    "viewportTransform",
-    { x: 0, y: 0, scale: 1 },
-    500,
-  );
+  const [viewportTransform, setViewportTransform, hasLoaded] =
+    usePersistentState<ViewportTransform>("viewportTransform", { x: 0, y: 0, scale: 1 }, 500);
   const viewportTransformRef = useRef<ViewportTransform>({ x: 0, y: 0, scale: 1 });
   const viewportRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
@@ -131,16 +129,29 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
         onTransformChange?.(newTransform);
       }
     },
-    [isMouseDown, disabled, dragStart, viewportTransform, isDragging, onPanStart, onTransformChange, setViewportTransform],
+    [
+      isMouseDown,
+      disabled,
+      dragStart,
+      viewportTransform,
+      isDragging,
+      onPanStart,
+      onTransformChange,
+      setViewportTransform,
+    ],
   );
 
   const handleMouseUp = useCallback(() => {
+    // Don't handle mouse up if viewport is disabled (e.g., when dragging a screen)
+    // This prevents mouse leave from terminating screen drags
+    if (disabled) return;
+
     if (isDragging) {
       onPanEnd?.();
     }
     setIsDragging(false);
     setIsMouseDown(false);
-  }, [isDragging, onPanEnd]);
+  }, [isDragging, onPanEnd, disabled]);
 
   // Handle zooming with scroll (10% to 100%)
   const handleWheel = useCallback(
@@ -228,6 +239,12 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
     }
   }, [viewportTransform, onTransformChange]);
 
+  const handleMouseLeave = useCallback(() => {
+    // Don't handle mouse leave if viewport is disabled (e.g., when dragging a screen)
+    // This prevents mouse leave from terminating screen drags
+    if (disabled) return;
+    handleMouseUp();
+  }, [disabled, handleMouseUp]);
 
   return (
     <div
@@ -236,7 +253,7 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
       onContextMenu={onContextMenu}
       style={{ cursor: isDragging ? "grabbing" : "grab" }}
     >
@@ -254,4 +271,3 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
 });
 
 export default Viewport;
-

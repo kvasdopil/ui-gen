@@ -106,26 +106,52 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
   // Define the Unsplash image search tool
   const findUnsplashImageTool = tool({
     description:
-      "Search Unsplash for images matching a query string. Returns a medium-resolution image URL that can be used in HTML img tags.",
+      "Search Unsplash for images matching a query string. Returns a medium-resolution image URL that can be used in HTML img tags. Always provide a descriptive query string.",
     parameters: z.object({
-      query: z.string().describe("The search query to find matching images on Unsplash"),
+      query: z
+        .string()
+        .min(1)
+        .describe(
+          "The search query to find matching images on Unsplash (required, must be a non-empty string)",
+        ),
     }),
     execute: async ({ query }) => {
+      // Validate query parameter
+      if (!query || typeof query !== "string" || query.trim().length === 0) {
+        const error = "Query parameter is required and must be a non-empty string";
+        console.error(`[Tool Call] findUnsplashImage - Error: ${error}`);
+        throw new Error(error);
+      }
       return await findUnsplashImage(query);
     },
   });
 
   // Generate HTML using Vercel AI SDK with conversation history and tools
-  const { text } = await generateText({
-    model,
-    system: systemPrompt,
-    prompt: finalPrompt,
-    temperature: 0.5,
-    tools: {
-      findUnsplashImage: findUnsplashImageTool,
-    },
-    maxSteps: 5,
-  });
+  let text: string;
+  try {
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      prompt: finalPrompt,
+      temperature: 0.5,
+      tools: {
+        findUnsplashImage: findUnsplashImageTool,
+      },
+      maxSteps: 5,
+    });
+    text = result.text;
+  } catch (error) {
+    // If tool call fails, retry without tools to allow generation to continue
+    console.error("Error during generation with tools, retrying without tools:", error);
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      prompt: finalPrompt,
+      temperature: 0.5,
+      // Retry without tools to allow generation to complete
+    });
+    text = result.text;
+  }
 
   // Clean up the generated HTML - remove markdown code block markers
   let cleanedHtml = text.trim();
@@ -144,4 +170,3 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
 
   return cleanedHtml;
 }
-

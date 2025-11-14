@@ -24,8 +24,11 @@ interface UIDatabase extends DBSchema {
 
 export interface Storage {
   saveScreens(screens: ScreenData[]): Promise<void>;
+  saveScreen(screen: ScreenData): Promise<void>;
   loadScreens(): Promise<ScreenData[]>;
   clearScreens(): Promise<void>;
+  deleteScreen(screenId: string): Promise<void>;
+  deleteDialogEntry(screenId: string, dialogId: string): Promise<void>;
   saveViewportTransform(transform: ViewportTransform): Promise<void>;
   loadViewportTransform(): Promise<ViewportTransform | null>;
   savePendingPrompt(
@@ -92,6 +95,30 @@ class ApiStorage implements Storage {
     }
   }
 
+  async saveScreen(screen: ScreenData): Promise<void> {
+    try {
+      if (screen.id && screen.position) {
+        // Update screen position and selectedPromptIndex
+        const response = await fetch(`/api/screens/${screen.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            x: screen.position.x,
+            y: screen.position.y,
+            selectedPromptIndex: screen.selectedPromptIndex,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`Error updating screen ${screen.id}:`, await response.text());
+        }
+      }
+    } catch (error) {
+      console.error("Error saving screen to API:", error);
+      throw error;
+    }
+  }
+
   async loadScreens(): Promise<ScreenData[]> {
     try {
       const response = await fetch("/api/screens");
@@ -115,15 +142,42 @@ class ApiStorage implements Storage {
       // Load all screens and delete them
       const screens = await this.loadScreens();
       for (const screen of screens) {
-        const response = await fetch(`/api/screens/${screen.id}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) {
-          console.error(`Error deleting screen ${screen.id}:`, await response.text());
-        }
+        await this.deleteScreen(screen.id);
       }
     } catch (error) {
       console.error("Error clearing screens:", error);
+      throw error;
+    }
+  }
+
+  async deleteScreen(screenId: string): Promise<void> {
+    try {
+      const response = await fetch(`/api/screens/${screenId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error deleting screen ${screenId}:`, errorText);
+        throw new Error(`Failed to delete screen: ${errorText}`);
+      }
+    } catch (error) {
+      console.error("Error deleting screen:", error);
+      throw error;
+    }
+  }
+
+  async deleteDialogEntry(screenId: string, dialogId: string): Promise<void> {
+    try {
+      const response = await fetch(`/api/screens/${screenId}/dialog/${dialogId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Error deleting dialog entry ${dialogId}:`, errorText);
+        throw new Error(`Failed to delete dialog entry: ${errorText}`);
+      }
+    } catch (error) {
+      console.error("Error deleting dialog entry:", error);
       throw error;
     }
   }

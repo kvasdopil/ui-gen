@@ -15,4 +15,3 @@ export const updateScreenSchema = z.object({
 export const createDialogSchema = z.object({
   prompt: z.string().min(1, "Prompt is required"),
 });
-

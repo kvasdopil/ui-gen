@@ -12,16 +12,19 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
 - 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
-- 🖼️ **Unsplash Image Integration**: AI can automatically search and include relevant images from Unsplash using the `findUnsplashImage` tool
+- 🖼️ **Unsplash Image Integration**: AI can automatically search and include relevant images from Unsplash using the `findUnsplashImage` tool (with graceful fallback if tool calls fail)
 - 🔄 **Multi-Step Conversations**: Supports up to 5 conversation steps, allowing the AI to make tool calls and follow-up responses
 - ♿ **Accessibility**: Generated UIs include proper semantic HTML (`<a>` for navigation, `<button>` for actions) and aria-labels for screen reader support
 - 🖼️ **Iframe Rendering**: Generated HTML is safely rendered in an isolated iframe
 - ⚡ **Real-time Generation**: Fast UI generation with loading states and error handling
+- 🔄 **Loading Placeholder**: Shows a placeholder screen with spinner, "Creating UI" text, and user prompt while UI is being generated
 - 🧹 **Clean Output**: Automatically strips markdown code blocks from AI responses
 - 🔄 **Follow-up Modifications**: Iteratively refine designs by modifying previous prompts with full conversation context
 - 📜 **Conversation History**: View all previous prompts in a history panel with the ability to modify and regenerate
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
-- 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen
+- ➕ **Empty Screen Support**: PromptPanel shows even for screens with no prompts yet, allowing you to add the first prompt via the "Modify" button
+- 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen; all deletions are persisted to the database
+- 🗑️ **Delete Screens**: Delete entire screens with all their conversation history; deletions are persisted to the database
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
 - 📋 **Clone Screens**: Clone a screen at any point in its conversation history, creating a new screen with full history up to that point (cloned screen is not auto-selected)
 - 📤 **Export to Clipboard**: Export any conversation point's HTML to clipboard with prompt history comment prefix - includes all prompts up to that point formatted as a comment block
@@ -33,7 +36,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Selectable Screens**: Click any screen to select it and see its prompt panel
 - 🎨 **Visual Selection**: Screens have a transparent border by default, display a 2px solid blue border when selected, and show a 2px solid blue border on hover when not selected
 - 👆 **Click Outside to Deselect**: Click on empty space to deselect the current screen
-- 🖱️ **Draggable Screens**: Drag any screen (selected or unselected) to reposition them; panning is disabled during screen drag
+- 🖱️ **Draggable Screens**: Drag any screen (selected or unselected) to reposition them; panning is disabled during screen drag; dragging continues even if mouse leaves viewport boundaries and only terminates on mouse release
 - 📍 **Camera Persistence**: Camera position and zoom level are saved and restored when you reload the page
 - 🚫 **Non-Interactive Screens**: Screen contents (iframe and overlays) are always non-interactive to prevent accidental clicks while navigating
 - 🖱️ **Double-Click to Activate**: Double-click any screen to activate it, center the camera, and zoom to 100%
@@ -49,6 +52,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 - **As a** designer or developer, **I want to** describe a UI in natural language, **so that** I can quickly generate a visual mockup without writing code
 - **As a** user, **I want to** see a loading indicator while my UI is being generated, **so that** I know the system is processing my request
+- **As a** user, **I want to** see a placeholder screen with my prompt displayed while UI is being generated, **so that** I can see what's being created
 - **As a** user, **I want to** generate UIs optimized for mobile screens (390px × 844px), **so that** I can create mobile-first designs
 - **As a** user, **I want to** generate UIs using Tailwind CSS, **so that** the generated mockups use modern, consistent styling
 
@@ -75,12 +79,13 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** click a screen to select it, **so that** I can interact with it and see its prompt panel
 - **As a** user, **I want to** double-click a screen to activate it, center the camera, and zoom to 100%, **so that** I can quickly focus on a specific screen
 - **As a** user, **I want** screen contents to be non-interactive, **so that** I don't accidentally trigger actions while navigating or panning
-- **As a** user, **I want to** drag unselected screens to reposition them, **so that** I can organize my screens spatially
+- **As a** user, **I want to** drag any screen (selected or unselected) to reposition them, **so that** I can organize my screens spatially
 - **As a** user, **I want** panning to be disabled when dragging a screen, **so that** I can move screens without accidentally panning the viewport
-- **As a** user, **I want** selected screens to remain non-draggable, **so that** I can interact with them without accidentally moving them
+- **As a** user, **I want** screen dragging to continue even if I move the mouse quickly and it leaves the viewport boundaries, **so that** I can drag screens smoothly without interruption
 - **As a** user, **I want to** see a visual indicator (blue border) on selected screens and when hovering over unselected screens, **so that** I know which screen is active or being targeted
 - **As a** user, **I want to** click outside screens to deselect them, **so that** I can pan and zoom without interference
 - **As a** user, **I want to** see the prompt panel only when a screen is selected, **so that** the interface stays clean when no screen is active
+- **As a** user, **I want to** see the prompt panel even when a screen has no prompts yet, **so that** I can add the first prompt to an empty screen
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
 - **As a** user, **I want** my camera position and zoom level to be saved, **so that** I can continue from where I left off when I reload the page
 - **As a** user, **I want to** toggle visibility of clickable elements (links and buttons) in generated designs, **so that** I can easily identify interactive elements
@@ -101,11 +106,14 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see which prompt is currently selected with visual highlighting, **so that** I know which output I'm viewing
 - **As a** user, **I want to** browse through output history by clicking different prompts, **so that** I can compare different versions of the generated UI
 - **As a** user, **I want to** delete conversation points from history, **so that** I can clean up unwanted entries
+- **As a** user, **I want** deleted conversation points to be removed from the database, **so that** they don't reappear when I reload the page
 - **As a** user, **I want to** see a menu button appear when hovering over history entries, **so that** I can access actions for each entry
 - **As a** user, **I want to** see a delete option in the menu for the last history entry, **so that** I can easily remove it
 - **As a** user, **I want to** confirm before deleting a history entry, **so that** I don't accidentally lose my work
 - **As a** user, **I want** the previous entry to be selected automatically when I delete the currently selected entry, **so that** I can continue viewing history seamlessly
 - **As a** user, **I want** the entire screen to be removed when I delete the last remaining history entry, **so that** empty screens don't clutter my workspace
+- **As a** user, **I want to** delete entire screens, **so that** I can remove screens I no longer need
+- **As a** user, **I want** deleted screens to be removed from the database, **so that** they don't reappear when I reload the page
 - **As a** user, **I want to** clone a screen at any point in its conversation history, **so that** I can branch off and explore different design directions from that state
 - **As a** user, **I want** cloned screens to include the full conversation history up to the cloned point, **so that** I have complete context for further modifications
 - **As a** user, **I want** cloned screens to be immediately ready to drag, **so that** I can quickly position them in my workspace
@@ -307,6 +315,7 @@ Get your API keys from:
    - Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (from step 3)
 
 6. Generate Prisma Client (if needed):
+
    ```bash
    npx prisma generate
    ```
@@ -367,7 +376,7 @@ yarn dev
 3. **Selecting Screens**: Click any screen to select it and view its prompt panel (this will also close the new screen form if it's open)
 4. **Double-Click to Focus**: Double-click any screen to activate it, center the camera on it, and zoom to 100% - works for both selected and unselected screens
 5. **Non-Interactive Content**: Screen contents (iframe and clickable overlays) are always non-interactive to prevent accidental clicks while navigating
-6. **Dragging Screens**: Click and drag unselected screens to reposition them; panning is automatically disabled during screen drag
+6. **Dragging Screens**: Click and drag any screen (selected or unselected) to reposition them; panning is automatically disabled during screen drag; dragging continues smoothly even if mouse leaves viewport boundaries and only ends when you release the mouse button
 7. **Visual Feedback**: Selected screens display a 2px blue border and appear on top; unselected screens show a grab cursor
 8. **Deselecting**: Click on empty space to deselect the current screen
 9. **Prompt Panel**: The prompt history panel only appears when a screen is selected
@@ -407,7 +416,8 @@ yarn dev
 
 1. Select a screen to see its prompt history panel on the right
 2. Click the "Modify" button (ghost style, turns blue on hover) at the bottom of the history
-3. Enter your modification request in the "What you would like to change" field
+   - For screens with no prompts yet, the label will say "What you want to create" instead of "What you would like to change"
+3. Enter your modification request (or first prompt for empty screens) in the text field
 4. **Text Preservation**: If you click outside or dismiss the modify form, your entered text will be preserved - click "Modify" again to continue editing
 5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button
 6. The new modification prompt will be added to the history immediately (before generation completes)
@@ -487,17 +497,20 @@ Generated UIs include accessibility best practices:
 All endpoints require authentication (OAuth user session).
 
 **Screens:**
+
 - `GET /api/screens` - List all screens for the authenticated user's workspace
 - `POST /api/screens` - Create a new screen (requires `x`, `y` coordinates)
 - `PUT /api/screens/:id` - Update screen (partial data: `x`, `y`, `selectedPromptIndex`)
-- `DELETE /api/screens/:id` - Delete screen and all associated dialog entries
+- `DELETE /api/screens/:id` - Delete screen and all associated dialog entries (cascade delete)
 
 **Dialog Entries:**
+
 - `GET /api/screens/:id/dialog` - List all dialog entries for a screen
 - `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically)
 - `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
 
 **Deprecated:**
+
 - `POST /api/create` - Deprecated endpoint, kept for backward compatibility. Use `POST /api/screens/:id/dialog` instead.
 
 #### Database Schema
@@ -513,6 +526,8 @@ All endpoints require authentication (OAuth user session).
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
 - Supports up to 5 conversation steps (`maxSteps: 5`) for multi-turn interactions and tool calls
 - Provides `findUnsplashImage` tool for automatic image search
+  - Includes validation to ensure query parameter is always provided
+  - Gracefully falls back to generation without tools if tool calls fail
 - Cleans up markdown code blocks from AI responses
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`)
 
@@ -541,6 +556,7 @@ All endpoints require authentication (OAuth user session).
 ### Component Structure
 
 - **page.tsx**: Main viewport component managing multiple screens, pan/zoom, selection, and dragging
+  - Handles screen deletion via `handleScreenDelete` which calls `storage.deleteScreen()` to persist deletions to database
   - Manages viewport transform state (pan position and zoom scale)
   - Uses refs to prevent rerenders during zoom operations for smooth performance
   - Handles panning via mouse press and drag on empty space
@@ -550,13 +566,16 @@ All endpoints require authentication (OAuth user session).
   - Tracks selected screen ID
   - **Empty State**: Displays "Right-click to create your first screen" message when no screens exist, positioned at 0,0 in viewport coordinates (centered on first load)
   - Centers viewport on first load when no screens exist and no saved transform
-  - Handles screen dragging: unselected screens can be dragged to reposition them
+  - Handles screen dragging: all screens (selected and unselected) can be dragged to reposition them
   - Disables panning when dragging a screen to prevent interference
+  - **Robust Drag Handling**: Screen dragging continues even when mouse moves fast and leaves viewport boundaries - uses global window event listeners with capture phase to ensure drag only terminates on actual mouse up events, not on mouse leave
   - Deselects screens when clicking outside or starting to drag another screen
   - Provides new screen creation flow: right-click on empty space shows popup, left-click anywhere dismisses popup
   - Preserves form input when canceling the new screen flow or modify prompt
   - Auto-loads screens and viewport transform from IndexedDB on mount
   - Auto-saves screens and viewport transform to IndexedDB whenever they change (screens debounced by 300ms, viewport transform debounced by 500ms)
+  - **Optimized Screen Saving**: Only saves the specific screen that was updated (position or selectedPromptIndex), not all screens - prevents unnecessary API calls when moving screens
+  - **Initial Load Protection**: Prevents saving during initial page load to avoid unnecessary update calls
   - Uses functional state updates in `handleScreenUpdate` to prevent race conditions when multiple screens update simultaneously
   - Always preserves screen positions during updates unless explicitly changed
   - Z-index management: newer screens appear above older ones, selected screens always on top
@@ -607,10 +626,12 @@ All endpoints require authentication (OAuth user session).
   - Uses ref with screen ID + timestamp key to prevent duplicate API calls
   - Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
   - Preserves original timestamps when completing conversation points
-  - Shows PromptPanel only when screen is selected
+  - Shows PromptPanel when screen is selected (even if it has no conversation points yet)
   - Handles screen click events for selection
-  - Displays "No content" message when screen has no HTML
+  - Displays placeholder screen with spinner, "Creating UI" text, and user prompt when generation is in progress or when screen has no content yet
+  - Shows "No content" message only when screen has no prompts and is not loading
   - Handles deletion of conversation points with automatic selection adjustment
+  - Calls `storage.deleteDialogEntry()` to persist conversation point deletions to database
   - Removes entire screen when last conversation point is deleted
   - Persists all changes immediately via onUpdate callback
   - **Arrow Connections**: Handles overlay clicks to start arrow creation
@@ -625,7 +646,7 @@ All endpoints require authentication (OAuth user session).
   - Arrow tip positioned at destination screen boundary
   - Uses SVG with viewBox for proper scaling
 - **PromptPanel.tsx**: History panel component displaying conversation and modification interface
-  - Displays all conversation points (prompts) as clickable cards
+  - Displays all conversation points (prompts) as clickable cards (or shows empty state with just "Modify" button for screens with no prompts)
   - Highlights the currently selected prompt with blue border and background
   - Allows clicking prompts to view their corresponding HTML outputs
   - Shows menu button (three dots) on hover for each entry
@@ -634,8 +655,9 @@ All endpoints require authentication (OAuth user session).
   - Shows toast notification after successful clipboard copy
   - Delete option uses destructive styling (red) in the menu
   - Provides confirmation dialog before deleting entries
-  - Provides "Modify" button to enter modification mode
+  - Provides "Modify" button to enter modification mode (always visible, even for empty screens)
   - Shows modification input field with "Create" button when in edit mode
+  - **Dynamic Labels**: Shows "What you want to create" for empty screens, "What you would like to change" for screens with existing prompts
   - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` to prevent blur event from dismissing the panel when textarea is focused
   - Preserves entered text when dismissing the modify form (text remains when clicking "Modify" again)
   - Handles canceling edit mode when input field loses focus and is empty

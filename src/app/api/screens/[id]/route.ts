@@ -3,10 +3,7 @@ import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateScreenSchema } from "@/lib/validations";
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser();
     if (!user.email) {
@@ -58,6 +55,7 @@ export async function PUT(
       },
       selectedPromptIndex: screen.selectedPromptIndex,
       conversationPoints: screen.dialogEntries.map((entry) => ({
+        id: entry.id,
         prompt: entry.prompt,
         html: entry.html || "",
         title: entry.title,
@@ -113,4 +111,3 @@ export async function DELETE(
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-
