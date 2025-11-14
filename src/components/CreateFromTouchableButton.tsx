@@ -6,12 +6,14 @@ interface CreateFromTouchableButtonProps {
   position: { x: number; y: number }; // Content coordinates
   onClick: () => void;
   disabled?: boolean;
+  touchableId: string;
 }
 
 export default function CreateFromTouchableButton({
   position,
   onClick,
   disabled = false,
+  touchableId,
 }: CreateFromTouchableButtonProps) {
   return (
     <button
@@ -23,11 +25,11 @@ export default function CreateFromTouchableButton({
         onClick();
       }}
       disabled={disabled}
-      className="absolute z-50 flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-400 bg-white shadow-md transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-400 disabled:hover:bg-white"
+      className="absolute z-50 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-gray-400 bg-white px-3 py-2 shadow-md transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-400 disabled:hover:bg-white"
       style={{
-        left: `${position.x - 20}px`,
-        top: `${position.y - 20}px`,
-        transform: "translate(0, 0)",
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        transform: "translate(-50%, -50%)",
       }}
       aria-label="Create new screen"
     >
@@ -45,6 +47,7 @@ export default function CreateFromTouchableButton({
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       )}
+      <span className="text-xs font-medium text-gray-700">{touchableId}</span>
     </button>
   );
 }

@@ -1237,6 +1237,7 @@ export default function Home() {
                       position={{ x: endContentX, y: endContentY }}
                       onClick={handleCreateScreenFromPendingArrow}
                       disabled={isCloningScreen}
+                      touchableId={arrowLine.touchableId}
                     />
                   )}
                 </>

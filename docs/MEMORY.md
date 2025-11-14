@@ -266,7 +266,8 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Reason**: Allows users to create new screens in their user flow by clicking the button, with automatic prompt generation based on the button's purpose
 - **Implementation**:
   - When arrow is dropped in empty space, keep it in `isPending` state (frontend-only, not persisted to DB)
-  - Show a round button with + sign at the end of the arrow
+  - Show a rectangular button with rounded corners at the end of the arrow
+  - Button displays the icon on top and the touchable ID as a label below
   - Button shows spinner and is disabled during cloning to prevent double submissions
   - Clicking the button:
     1. Clones the original screen using `POST /api/screens/:id/clone` endpoint with the active conversation point ID
