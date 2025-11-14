@@ -1,10 +1,6 @@
 # Development Memory & Notes
 
-This file contains important notes, decisions, and gotchas for future development and AI assistance.
-
-## Project Overview
-
-This is a UI generation tool that uses Google Gemini AI to generate HTML mockups based on user prompts. The generated HTML is rendered in an iframe with Tailwind CSS via CDN.
+This file contains important technical notes, decisions, and gotchas for future development and AI assistance. For user-facing documentation, see README.md.
 
 ## Key Architecture Decisions
 
@@ -33,6 +29,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - `DELETE /api/screens/:id` - Delete screen
   - `GET /api/screens/:id/dialog` - List dialog entries for a screen
   - `POST /api/screens/:id/dialog` - Create dialog entry (generates HTML)
+  - `PUT /api/screens/:id/dialog/:dialogId` - Update dialog entry arrows only
   - `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
 - **Deprecated**: `/api/create` endpoint is deprecated but kept for backward compatibility
 - **UI Generation**: Extracted to `src/lib/ui-generation.ts` as reusable function
@@ -43,7 +40,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Decision**: Strip markdown code blocks from AI responses
 - **Reason**: AI sometimes wraps output in ```html code blocks
 - **Implementation**: Regex patterns to remove leading/trailing backticks and "html" label
-- **Location**: `src/app/api/create/route.ts` (lines 42-55)
+- **Location**: `src/lib/ui-generation.ts` (also in deprecated `src/app/api/create/route.ts`)
 
 ### 5. Component Separation
 
@@ -286,32 +283,6 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   8. Clear pending prompt from storage
 - **Location**: `src/lib/storage.ts`, `src/components/Screen.tsx`, `src/app/page.tsx`
 
-## Environment Variables
-
-### Required
-
-- `GOOGLE_GENERATIVE_AI_API_KEY`: Google Gemini API key
-  - The `@ai-sdk/google` package automatically reads this variable
-  - No need to pass it explicitly to the `google()` function
-  - Get key from: https://makersuite.google.com/app/apikey
-- `UNSPLASH_ACCESS_KEY`: Unsplash API Access Key
-  - Get from: https://unsplash.com/developers
-- `AUTH_SECRET`: Secret key for session encryption
-  - Generate with: `openssl rand -base64 32`
-  - Required for Auth.js session management
-- `AUTH_URL`: Base URL for authentication
-  - Local development: `http://localhost:3000`
-  - Production: `https://your-domain.com`
-- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
-  - Get from Google Cloud Console > APIs & Services > Credentials
-- `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
-  - Get from Google Cloud Console > APIs & Services > Credentials
-  - **Important**: When setting via Vercel CLI, use `echo -n` to avoid trailing newlines
-- `DATABASE_URL`: Neon PostgreSQL connection string
-  - Get from Neon dashboard or CLI: `neonctl projects list`
-  - Format: `postgresql://user:password@host/database?sslmode=require`
-  - Required for Prisma database access
-
 ## Important Code Locations
 
 ### API Routes
@@ -365,70 +336,6 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - `hashEmail()` - Creates SHA-256 hash of email for use as userId
   - Uses email hash for privacy (emails not stored in plain text)
 
-### UserAvatar Component
-
-- **File**: `src/components/UserAvatar.tsx`
-- **Key Features**:
-  - Uses `useSession` hook from `next-auth/react` to get session data
-  - Fixed position in top-right corner (`fixed top-4 right-4 z-[9999]`)
-  - Not affected by viewport transforms (positioned outside viewport-content div)
-  - Shows default icon (`FaUserCircle`) when not authenticated
-  - Shows Google profile image when authenticated (using Next.js Image component)
-  - Click handler: initiates sign-in if not authenticated, shows popup if authenticated
-  - Popup displays user name, email, and logout button
-  - Prevents event propagation (onMouseDown, onMouseMove, onMouseUp, onClick) to avoid interfering with viewport
-  - Uses `cursor-default` on popup menu to override viewport cursor
-  - Closes popup when clicking outside
-
-### Screen Component
-
-- **File**: `src/components/Screen.tsx`
-- **Key Features**:
-  - Manages `conversationPoints` state (array of ConversationPoint objects)
-  - Extracts screen title from HTML metadata (`<!-- Title: ... -->`) and displays it above the screen
-  - **Flexible Layout**: Screen container has flexible width (stretches horizontally) with min-height of 844px
-  - **Dynamic Iframe Height**: Iframe width is fixed at 390px, but height adjusts dynamically based on content (minimum 844px)
-  - **Height Communication**: Uses `postMessage` API to communicate content height from iframe to parent
-  - **Minimum Height Enforcement**: CSS ensures html, body, and root content element have min-height: 844px
-  - Wraps generated HTML with full document structure and simplified CSS/JS for height management
-  - Injects Tailwind CDN and helper scripts
-  - Renders iframe with `sandbox="allow-same-origin allow-scripts"`
-  - Auto-starts generation when screen has conversation point without HTML
-  - Replaces incomplete conversation points instead of duplicating them (prevents duplicate prompts)
-  - Adds modification prompts to history immediately (before API response) for better UX
-  - Replaces incomplete points with completed ones when generation finishes
-  - Removes incomplete points if generation fails
-  - Uses `generationInProgressRef` with screen ID + timestamp key to prevent duplicate API calls
-  - Reuses existing incomplete conversation points when auto-generation triggers to prevent duplicates
-  - **Auth Flow Preservation**: When API returns 401, saves prompt and screenId to storage, triggers sign-in, and auto-retries after auth
-  - Displays placeholder screen with spinner, "Creating UI" text, and user prompt when generation is in progress or when screen has no content yet
-  - Shows "No content" message only when screen has no prompts and is not loading
-  - Shows PromptPanel when screen is selected (even if it has no conversation points yet)
-  - **Clickable Highlights**: Toggle button next to screen title to show/hide interactive element highlights
-    - Highlights `<a>` elements with `href` attribute in magenta
-    - Highlights `<button>` elements in cyan
-    - Overlay layer positioned absolutely over iframe without modifying generated content
-    - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
-    - State is not persisted (resets on page reload)
-  - **HTML Wrapper**: Simplified implementation with CSS rules for min-height and JavaScript for height calculation
-
-### Prompt Panel
-
-- **File**: `src/components/PromptPanel.tsx`
-- **Key Features**:
-  - Displays conversation points (prompts) as clickable cards (or shows empty state with just "Modify" button for screens with no prompts)
-  - Highlights selected prompt with blue border and background
-  - **Dynamic Labels**: Shows "What you want to create" for empty screens, "What you would like to change" for screens with existing prompts
-  - Modification input field with dynamic placeholder text
-  - **Auto-Focus**: Textarea automatically focuses when "Modify" button is clicked, allowing immediate typing
-  - Ctrl/Cmd+Enter to submit modifications (keyboard shortcut support)
-  - **Create Button Fix**: Uses `onMouseDown` with `preventDefault()` instead of `onClick` to prevent blur event from dismissing the panel when textarea is focused
-    - Prevents `onBlur` handler from closing the form before `handleCreate` can execute
-    - Ensures form stays open and create action completes successfully
-  - Positioned absolutely to the right of Screen component
-  - Uses `left-full ml-2` for positioning
-  - Always shows "Modify" button, even for screens with no conversation points yet
-
 ### Storage
 
 - **File**: `src/lib/storage.ts`
@@ -437,7 +344,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
   - `ApiStorage` class implementing API-based storage for screens
   - Uses REST API endpoints for screens and dialog entries
   - Uses IndexedDB for client-side state (viewport transform, pending prompts)
-  - Database name: `ui-gen-db`, version: 2
+  - Database name: `ui-gen-db`, version: 3
   - Object stores:
     - `viewportTransform` with key `"current"` storing ViewportTransform
     - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
@@ -506,7 +413,7 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 
 - **Issue**: AI sometimes wraps output in markdown code blocks
 - **Workaround**: Regex cleanup in API endpoint
-- **Location**: `src/app/api/create/route.ts`
+- **Location**: `src/lib/ui-generation.ts`
 
 ### 3. Iframe Sandbox Restrictions
 
@@ -521,152 +428,21 @@ This is a UI generation tool that uses Google Gemini AI to generate HTML mockups
 - **Implementation**: Component returns `null` during SSR and initial render, only renders portal after `isMounted` is `true`
 - **Location**: `src/components/ui/toast.tsx`
 
-## Dependencies
-
-### Core
-
-- `next`: 16.0.0 - Framework
-- `react`: 19.2.0 - UI library
-- `typescript`: 5.x - Type safety
-
-### AI
-
-- `ai`: ^4.0.0 - Vercel AI SDK
-- `@ai-sdk/google`: ^1.2.22 - Google Gemini provider
-
-### Styling
-
-- `tailwindcss`: ^4 - CSS framework
-- `react-icons`: ^5.5.0 - Icon library
-
-### Storage
-
-- `idb`: Latest - IndexedDB wrapper for client-side persistence
-
-## File Naming Conventions
-
-- Components: PascalCase (e.g., `Screen.tsx`, `PromptPanel.tsx`)
-- API routes: lowercase (e.g., `route.ts` in `api/create/`)
-- Utilities: camelCase (e.g., `utils.ts`)
-
-## Component Props
-
-### PromptPanel
-
-```typescript
-interface PromptPanelProps {
-  conversationPoints: ConversationPoint[];
-  onSend: (modificationPrompt: string) => void;
-  isLoading: boolean;
-  selectedPromptIndex: number | null;
-  onPromptSelect: (pointIndex: number) => void;
-}
-```
-
-## API Response Format
-
-### Success
-
-```json
-{
-  "html": "<div class=\"flex h-full w-full\">...</div>"
-}
-```
-
-### Error
-
-```json
-{
-  "error": "Error message"
-}
-```
-
-## Development Workflow
-
-### Creating New Screen
-
-1. User clicks empty space (first click deselects if screen selected, second click shows initial popup)
-2. `CreateScreenPopup` component appears at click location with "Create screen" title and "Mobile app" button
-3. User clicks "Mobile app" button to open the prompt dialog form
-4. User enters prompt and clicks "Create"
-5. **Step 1**: Screen is created via `POST /api/screens` (with x, y coordinates)
-   - Screen appears immediately with incomplete conversation point (prompt but no HTML)
-   - Placeholder screen shows with spinner, "Creating UI" text, and user prompt
-   - Screen ID is returned right away
-6. **Step 2**: Screen component's auto-generation effect detects incomplete point and creates first dialog entry via `POST /api/screens/:id/dialog` (with prompt)
-   - API endpoint uses `generateUIFromHistory()` from `src/lib/ui-generation.ts`
-   - Converts existing dialog entries to history format (none for first entry)
-   - Calls Gemini API via Vercel AI SDK
-   - If tool calls fail, retries generation without tools
-   - Cleans markdown code blocks
-   - Returns dialog entry with HTML and title metadata
-7. `Screen` component:
-   - Replaces incomplete conversation point with completed one
-   - Extracts title from HTML metadata (`<!-- Title: ... -->`)
-   - Displays title above the screen
-   - Wraps HTML with document structure
-   - Injects Tailwind CDN
-   - Sets `srcDoc` on iframe
-   - Placeholder is replaced with actual UI
-8. Screen data is automatically saved to database via API
-9. Iframe renders the generated UI
-
-### Making Modifications
-
-1. User selects a screen to see prompt history panel
-2. User clicks "Modify" button
-3. User enters modification request and clicks "Create"
-4. `Screen` component immediately adds incomplete conversation point to history (prompt appears right away)
-5. API call is made to `POST /api/screens/:id/dialog` with the prompt
-6. API endpoint:
-   - Loads all existing dialog entries for the screen
-   - Converts them to history format
-   - Adds the new prompt to history
-   - Calls `generateUIFromHistory()` to generate HTML
-   - Creates new dialog entry in database
-7. When API response arrives, incomplete point is replaced with completed point
-8. If API call fails, incomplete point is removed from history
-9. User can click prompts in history panel to view different versions
-
-## Testing Considerations
-
-- Test with various prompt types (simple, complex, edge cases)
-- Verify Tailwind classes are applied correctly
-- Check iframe sandbox permissions
-- Test markdown code block cleanup
-- Verify loading states work correctly
-- Test error handling
-
-## Future Improvements to Consider
-
-1. **Streaming Responses**: Use `streamText` instead of `generateText` for faster perceived performance
-2. **Error Recovery**: Better error messages and retry mechanisms
-3. **UI Export**: Allow users to download generated HTML
-4. **Backend Persistence**: ✅ Completed - Screens and dialog entries now use PostgreSQL database via REST API
-5. **Multiple Sizes**: Support different screen sizes beyond 390px × 844px
-6. **Custom Tailwind Config**: Allow users to customize Tailwind settings
-7. **Pre-compiled Tailwind**: Consider using a pre-compiled Tailwind CSS file instead of CDN for better reliability
-8. **Screen Deletion**: Add ability to delete screens
-9. **Screen Reordering**: Add ability to manually reorder screens
-10. **Export All**: Export all screens as a collection
-
 ## Notes for AI Assistants
+
+### Critical Implementation Details
 
 - System prompt is in `src/prompts/generate-ui.ts` as `GENERATE_UI_PROMPT` constant - update this file when modifying generation logic
 - The API endpoint automatically cleans markdown code blocks - don't duplicate this logic
 - Generated HTML includes title metadata (`<!-- Title: ... -->`) which is extracted and displayed above screens
-- Screen component extracts and displays titles from HTML metadata for both active and inactive screens
 - Iframe sandbox must allow scripts for Tailwind to work
 - Screen component has flexible width (stretches horizontally) with min-height of 844px
 - Iframe width is fixed at 390px, height adjusts dynamically based on content (minimum 844px)
-- Empty state: When no screens exist, displays "Click anywhere to create your first screen" message at 0,0 in viewport coordinates (centered on first load)
 - HTML wrapper uses simplified CSS/JS: CSS sets min-height on html, body, and body > \*; JavaScript calculates and sends height via postMessage
 - PromptPanel is positioned absolutely relative to Screen component wrapper
 - Placeholder screen replaces iframe content during generation, showing spinner, "Creating UI" text, and user prompt
-- PromptPanel shows even for screens with no conversation points yet, allowing users to add the first prompt
 - Data structure: Use `ConversationPoint` type for storing prompt, HTML, title, and timestamp together
 - UI generation logic is extracted to `src/lib/ui-generation.ts` as reusable function `generateUIFromHistory()`
-- The UI generation function automatically cleans markdown code blocks - don't duplicate this logic
 - Storage abstraction: Use `Storage` interface from `src/lib/storage.ts` - uses API for screens, IndexedDB for client state
 - Screens are auto-saved to database via API when they change (only the specific screen that was updated), auto-loaded from API on mount
 - Viewport transform (camera position and zoom) is auto-saved to IndexedDB with 500ms debounce, auto-loaded on mount
@@ -674,12 +450,15 @@ interface PromptPanelProps {
 - User identification: Email hash (SHA-256) used as userId for privacy (see `src/lib/auth.ts` - `hashEmail()` function)
 - Workspace: Each user has a default workspace (email hash + name 'default')
 - Screen creation: Two-step process - create screen first via `POST /api/screens`, then create first dialog entry via `POST /api/screens/:id/dialog`
-- Dialog entries: Immutable once created (no update endpoint, only DELETE)
+- Dialog entries: Immutable once created (no update endpoint, only DELETE) - except arrows can be updated via PUT
 - API endpoints: RESTful design with separate endpoints for screens and dialog entries (see `src/app/api/screens/`)
 - Validation: Zod schemas used for all API request validation (see `src/lib/validations.ts`)
 - All API endpoints require authentication - use `getAuthenticatedUser()` from `src/lib/auth.ts`
 - Workspace auto-creation: Use `getOrCreateWorkspace()` from `src/lib/auth.ts` to get or create user's workspace
 - Deprecated endpoint: `/api/create` is deprecated but kept for backward compatibility
+
+### State Management
+
 - New screens are NOT auto-selected or auto-centered to prevent viewport disruption
 - Placeholder screen: Shows when `isLoading` is true OR when there's an incomplete conversation point OR when screen exists but has no content yet
 - Tool call error handling: `findUnsplashImage` tool includes validation and graceful fallback - if tool calls fail, generation retries without tools
@@ -696,6 +475,9 @@ interface PromptPanelProps {
 - Position preservation: Screen positions are always preserved during updates unless explicitly changed
 - Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
 - No default screen - page starts empty, user clicks to create first screen
+
+### Interaction Patterns
+
 - Screen dragging: All screens (selected and unselected) can be dragged; panning is disabled during drag; dragging continues even when mouse leaves viewport boundaries
 - Drag detection: Only mark as dragging after >5px movement to allow clicks to select; prevent panning as soon as `draggedScreenId` is set
 - Robust drag handling: Uses refs for state tracking and global window event listeners with capture phase to ensure drag only terminates on actual mouse up, not on mouse leave
