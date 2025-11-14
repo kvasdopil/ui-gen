@@ -27,6 +27,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - `POST /api/screens` - Create new screen (requires x, y coordinates)
   - `PUT /api/screens/:id` - Update screen (partial data)
   - `DELETE /api/screens/:id` - Delete screen
+  - `POST /api/screens/:id/clone` - Clone screen up to a conversation point (requires convPointId, x, y)
   - `GET /api/screens/:id/dialog` - List dialog entries for a screen
   - `POST /api/screens/:id/dialog` - Create dialog entry (generates HTML)
   - `PUT /api/screens/:id/dialog/:dialogId` - Update dialog entry arrows only
@@ -234,6 +235,9 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Overlay layer positioned absolutely over iframe
   - Highlights `<a>` elements with `href` attribute in magenta (`#ff00ff` with 10% opacity fill)
   - Highlights `<button>` elements in cyan (`#00ffff` with 10% opacity fill)
+  - **Touchable ID Extraction**: Extracts `aria-roledescription` attribute from each `<a>` and `<button>` element as `touchableId`
+    - Elements without `aria-roledescription` are skipped (with console warning) and cannot be used for arrow creation
+    - The `touchableId` is stored in highlight objects and used to identify arrows instead of overlay index
   - Uses `offsetLeft`/`offsetTop` to calculate element positions relative to iframe document (not affected by CSS transforms)
   - Adds iframe offset within container to get final position relative to container (where overlay is positioned)
   - Updates highlights when iframe content loads, changes, or window resizes
@@ -252,10 +256,44 @@ This file contains important technical notes, decisions, and gotchas for future 
     - **Database Storage**: Arrows are stored as JSON in `DialogEntry.arrows` field in PostgreSQL database, persisted per conversation point
     - **API Endpoint**: `PUT /api/screens/:id/dialog/:dialogId` endpoint updates arrows for a dialog entry
     - **Debugging**: Console logging added throughout arrow creation flow (in `Screen.tsx` and `page.tsx`) for troubleshooting - can be removed in production if desired
-- **Gotcha**: `getBoundingClientRect()` returns viewport coordinates affected by CSS transforms, so we use `offsetLeft`/`offsetTop` instead to get positions relative to iframe document
-- **Location**: `src/components/Screen.tsx`, `src/app/page.tsx`
+  - **Gotcha**: `getBoundingClientRect()` returns viewport coordinates affected by CSS transforms, so we use `offsetLeft`/`offsetTop` instead to get positions relative to iframe document
+  - **Touchable ID**: Arrows are identified by `touchableId` (aria-roledescription attribute) instead of overlay index for stable identification
+  - **Location**: `src/components/Screen.tsx`, `src/app/page.tsx`
 
-### 20. Auth Flow Preservation
+### 20. Pending Arrow Button for Screen Creation
+
+- **Decision**: When dragging a link/button and dropping it in empty space, show a button at the end instead of deleting the arrow
+- **Reason**: Allows users to create new screens in their user flow by clicking the button, with automatic prompt generation based on the button's purpose
+- **Implementation**:
+  - When arrow is dropped in empty space, keep it in `isPending` state (frontend-only, not persisted to DB)
+  - Show a round button with + sign at the end of the arrow
+  - Button shows spinner and is disabled during cloning to prevent double submissions
+  - Clicking the button:
+    1. Clones the original screen using `POST /api/screens/:id/clone` endpoint with the active conversation point ID
+    2. Creates a new screen at the arrow end position with all conversation points up to and including the active one
+    3. Adds a new incomplete dialog entry with prompt: "Create a screen that should be shown after user presses at '{touchableId}'"
+    4. Updates the arrow in the original screen's conversation point to point to the cloned screen
+    5. Persists the arrow to the database
+    6. Screen component's auto-generation effect handles creating the dialog entry and starting HTML generation
+  - Button is cleared when clicking on screens or empty space (but not when clicking the button itself)
+  - Pending arrows are cleared when starting a new arrow drag
+  - Touchable ID (aria-roledescription) is used to identify arrows instead of overlay index for stable identification
+- **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`
+
+### 21. Loading States for Screen Creation
+
+- **Decision**: Show loading spinners and disable buttons during screen creation/cloning operations
+- **Reason**: Prevents double submissions and provides clear visual feedback during async operations
+- **Implementation**:
+  - `isCreatingScreen` state tracks when new screen creation is in progress
+  - `isCloningScreen` state tracks when screen cloning from pending arrow is in progress
+  - NewScreenDialog shows spinner in Create button when `disabled` prop is true
+  - Pending arrow button shows spinner when `isCloningScreen` is true
+  - Both buttons are disabled during their respective operations
+  - Loading states are cleared in finally blocks and on early returns (errors, auth redirects)
+- **Location**: `src/app/page.tsx`, `src/components/NewScreenDialog.tsx`
+
+### 22. Auth Flow Preservation
 
 - **Decision**: Preserve prompts and restore create flow after authentication
 - **Reason**: When users try to create/modify screens without being authenticated, they shouldn't lose their work
@@ -302,6 +340,16 @@ This file contains important technical notes, decisions, and gotchas for future 
   - DELETE: Delete dialog entry (requires screen ID and dialog entry ID)
   - Dialog entries are mostly immutable (prompt, html, title cannot be updated) - only arrows can be updated via PUT endpoint
   - All endpoints include dialog entry IDs in responses for frontend deletion operations
+
+- **Screen Cloning**: `src/app/api/screens/[id]/clone/route.ts`
+  - POST: Clone a screen up to a specific conversation point
+  - Requires payload: `{ convPointId: string, x: number, y: number }`
+  - Creates a new screen with all dialog entries up to and including the specified conversation point
+  - Sets `selectedPromptIndex` to the index of the cloned conversation point
+  - Preserves all conversation data including arrows
+  - Returns the new screen data in the same format as other endpoints
+  - Validates that the source screen exists and belongs to the user's workspace
+  - Validates that the conversation point exists in the source screen
 
 - **UI Generation**: `src/lib/ui-generation.ts`
   - Extracted reusable function `generateUIFromHistory()`
@@ -370,6 +418,13 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Key Types**:
   - `ConversationPoint`: `{ id?: string, prompt: string, html: string, title: string | null, timestamp: number, arrows?: ConversationPointArrow[] }`
     - `id` field is optional and stores dialog entry ID from database (used for deletion operations)
+  - `ConversationPointArrow`: `{ touchableId: string, targetScreenId: string, startPoint?: { x: number, y: number } }`
+    - `touchableId` is the `aria-roledescription` attribute value from the touchable element (`<a>` or `<button>`)
+    - Used as a globally unique identifier for arrows instead of overlay index for stable identification
+    - `targetScreenId` is the destination screen ID that the arrow points to
+    - `startPoint` is optional and stores the arrow start position relative to screen center (for rendering)
+  - `Arrow`: `{ id: string, startScreenId: string, conversationPointIndex: number, touchableId: string, startPoint: { x: number, y: number }, endScreenId: string | null, endPoint: { x: number, y: number } }`
+    - Similar to `ConversationPointArrow` but includes additional rendering information
   - `ScreenData`: `{ id: string, conversationPoints: ConversationPoint[], selectedPromptIndex: number | null, position?: { x: number, y: number }, height?: number }`
 - **File**: `src/lib/storage.ts`
 - **Key Types**:
@@ -380,6 +435,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - `Screen`: `{ id: uuid, workspaceId: uuid, positionX: float, positionY: float, selectedPromptIndex: int?, createdAt, updatedAt }`
   - `DialogEntry`: `{ id: uuid, screenId: uuid, prompt: string, html: string?, title: string?, arrows: json?, timestamp: bigint, createdAt, updatedAt }`
     - `arrows` field stores array of `ConversationPointArrow` objects as JSON
+    - Each arrow contains `touchableId` (aria-roledescription value) instead of overlay index for stable identification
 
 ## System Prompt
 
@@ -400,6 +456,10 @@ This file contains important technical notes, decisions, and gotchas for future 
 - Use Tailwind CSS classes exclusively
 - Use Font Awesome icons via CDN (no custom SVG)
 - Use Unsplash for images
+- **REQUIRED**: ALL `<a>` and `<button>` tags MUST include `aria-roledescription` attribute with a human-readable, globally unique name
+  - This value is used as `touchableId` to identify arrows/links between screens
+  - Each `aria-roledescription` value must be unique across the entire page
+  - Elements without `aria-roledescription` are skipped when creating highlights and cannot be used for arrow creation
 
 ## Known Issues & Workarounds
 
@@ -494,4 +554,11 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Conversation point deletion: `handleDeletePoint` in `Screen.tsx` calls `storage.deleteDialogEntry()` which calls `DELETE /api/screens/:id/dialog/:dialogId`
   - Dialog entry IDs are included in API responses and preserved in `ConversationPoint.id` field for deletion operations
   - Deletions update local state immediately for responsive UI, then persist to database via API calls
+- Keyboard shortcuts: Delete key triggers delete confirmation dialog for latest conversation point
+  - Implementation: Keyboard event listener in `Screen.tsx` that listens for Delete key when screen is selected
+  - Only triggers when latest conversation point is explicitly selected (`selectedPromptIndex === lastIndex`)
+  - Prevents triggering when user is typing in input/textarea/contentEditable elements
+  - Uses `forwardRef` and `useImperativeHandle` in `PromptPanel.tsx` to expose `triggerDelete` method
+  - Opens the same confirmation dialog as clicking the delete button in the menu
+  - Location: `src/components/Screen.tsx` (keyboard handler), `src/components/PromptPanel.tsx` (ref interface)
 - Toast notifications: Custom toast system in `src/components/ui/toast.tsx` - uses `isMounted` state to prevent hydration mismatches (returns `null` during SSR, only renders after client-side hydration completes)

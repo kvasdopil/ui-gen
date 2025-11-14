@@ -22,12 +22,15 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
   - **Navigation**: Clickable elements that initiate navigation should use \`<a>\` tags with \`href="#"\` (e.g., links to other pages, navigation items, menu items that navigate)
   - **Actions**: Clickable elements that initiate actions should use \`<button>\` tags (e.g., submit buttons, action buttons, toggle buttons, delete buttons, etc.)
   - Do NOT use \`div\` elements with \`cursor-pointer\` for interactive elements - use proper semantic HTML (\`<a>\` or \`<button>\`)
+  - **aria-roledescription**: ALL \`<a>\` and \`<button>\` tags MUST include an \`aria-roledescription\` attribute with a human-readable, globally unique name that describes the element's role. Each \`aria-roledescription\` value must be unique across the entire page (e.g., \`aria-roledescription="home navigation link"\`, \`aria-roledescription="submit form button"\`, \`aria-roledescription="close dialog button"\`). Make each description specific and descriptive enough to be globally unique.
 - Apply styling exclusively through Tailwind CSS classes
 - No inline styles except for fixed dimensions when necessary
 - **Root Element**: The root element must be a \`div\` with classes \`flex h-full w-full\`
 - **Icons**: Use Font Awesome icons ONLY via CDN (use \`<i>\` tags with Font Awesome classes like \`fa fa-home\` or \`fas fa-home\`). NEVER generate custom SVG icons or embed SVG code directly. The Font Awesome CDN will be automatically included.
 - **Images**: Use Unsplash for image mockups (use \`https://images.unsplash.com/\` URLs with appropriate dimensions)
-- **Accessibility**: Add \`aria-label\` attributes to key UI elements for screen reader support. **IMPORTANT**: aria-labels should describe the element's purpose and context, not just duplicate visible text. They should provide meaningful information that helps screen reader users understand what the element does or contains:
+- **Accessibility**: 
+  - **aria-roledescription for interactive elements**: ALL \`<a>\` and \`<button>\` tags MUST include an \`aria-roledescription\` attribute with a human-readable, globally unique name. Each value must be unique across the entire page and should describe the element's specific role (e.g., \`aria-roledescription="home navigation link"\`, \`aria-roledescription="submit form button"\`, \`aria-roledescription="delete item button"\`). Make each description specific enough to be globally unique.
+  - **aria-label**: Add \`aria-label\` attributes to key UI elements for screen reader support. **IMPORTANT**: aria-labels should describe the element's purpose and context, not just duplicate visible text. They should provide meaningful information that helps screen reader users understand what the element does or contains:
   - Lists: Add \`aria-label="list of [items]"\` to list containers (e.g., \`aria-label="list of users"\`, \`aria-label="list of recipes"\`) - describe what the list contains, not just "list"
   - Keyboards/Input areas: Add \`aria-label="main keyboard"\` or \`aria-label="search keyboard"\` to input containers - describe the keyboard's purpose
   - Navigation elements: Add descriptive labels like \`aria-label="main navigation"\` or \`aria-label="bottom navigation"\` - explain the navigation's role
@@ -76,7 +79,7 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
 <!-- Title: Basic calculator app -->
 <div class="flex h-full w-full overflow-y-auto">
   <!-- Example navigation link with Font Awesome icon -->
-  <a href="#" class="flex h-11 w-11 items-center justify-center" aria-label="Navigate to home">
+  <a href="#" class="flex h-11 w-11 items-center justify-center" aria-label="Navigate to home" aria-roledescription="home navigation link">
     <i class="fas fa-home text-xl text-blue-500"></i>
   </a>
 
@@ -91,6 +94,7 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
   <button
     class="flex h-11 items-center justify-center rounded-lg bg-blue-500 px-4 text-white"
     aria-label="Submit form"
+    aria-roledescription="submit form button"
   >
     Submit
   </button>
@@ -132,6 +136,7 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
   - Use \`<a href="#">\` for clickable elements that initiate navigation (links, menu items, navigation buttons)
   - Use \`<button>\` for clickable elements that initiate actions (submit, delete, toggle, etc.)
   - Do NOT use \`div\` elements with \`cursor-pointer\` for interactive elements - always use proper semantic HTML
+  - **REQUIRED**: ALL \`<a>\` and \`<button>\` tags MUST include an \`aria-roledescription\` attribute with a human-readable, globally unique name. Each value must be unique across the entire page (e.g., \`aria-roledescription="home navigation link"\`, \`aria-roledescription="submit form button"\`, \`aria-roledescription="close dialog button"\`). Make each description specific and descriptive enough to be globally unique.
 - **Accessibility Best Practices**: Always add \`aria-label\` attributes to key elements, but remember:
   - **Purpose over duplication**: aria-labels should describe the element's purpose and provide context, not just repeat visible text. For example, use \`aria-label="Close dialog"\` not \`aria-label="X"\`, or \`aria-label="list of users"\` not just \`aria-label="list"\`
   - **Meaningful context**: Describe what the element does or contains, helping screen reader users understand its role in the interface

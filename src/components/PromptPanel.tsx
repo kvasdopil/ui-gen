@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { FaCopy, FaDownload, FaEdit, FaMagic } from "react-icons/fa";
 import { MdDeleteOutline, MdMoreVert } from "react-icons/md";
 import { Button } from "@/components/ui/button";
@@ -38,22 +38,40 @@ interface PromptPanelProps {
   getHtmlForPoint: (pointIndex: number) => string;
 }
 
-export default function PromptPanel({
-  conversationPoints,
-  onSend,
-  isLoading,
-  selectedPromptIndex,
-  onPromptSelect,
-  onDeletePoint,
-  onClone,
-  screenName,
-  screenId,
-  getHtmlForPoint,
-}: PromptPanelProps) {
+export interface PromptPanelHandle {
+  triggerDelete: (index: number) => void;
+}
+
+const PromptPanel = forwardRef<PromptPanelHandle, PromptPanelProps>(function PromptPanel(
+  {
+    conversationPoints,
+    onSend,
+    isLoading,
+    selectedPromptIndex,
+    onPromptSelect,
+    onDeletePoint,
+    onClone,
+    screenName,
+    screenId,
+    getHtmlForPoint,
+  },
+  ref,
+) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = usePersistentState<string>(`promptEdit-${screenId}`, "", 300);
   const [confirmDeleteIndex, setConfirmDeleteIndex] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleDeleteClick = (index: number) => {
+    setConfirmDeleteIndex(index);
+  };
+
+  // Expose method to trigger delete from parent
+  useImperativeHandle(ref, () => ({
+    triggerDelete: (index: number) => {
+      handleDeleteClick(index);
+    },
+  }));
 
   const handleModify = () => {
     setIsEditing(true);
@@ -95,10 +113,6 @@ export default function PromptPanel({
       // Exit editing mode but keep the text for next time
       setIsEditing(false);
     }
-  };
-
-  const handleDeleteClick = (index: number) => {
-    setConfirmDeleteIndex(index);
   };
 
   const handleConfirmDelete = () => {
@@ -286,4 +300,6 @@ ${html}`;
       </div>
     </div>
   );
-}
+});
+
+export default PromptPanel;

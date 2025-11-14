@@ -43,7 +43,7 @@ export async function GET() {
         timestamp: Number(entry.timestamp),
         arrows:
           (entry.arrows as Array<{
-            overlayIndex: number;
+            touchableId: string;
             targetScreenId: string;
             startPoint?: { x: number; y: number };
           }>) || [],

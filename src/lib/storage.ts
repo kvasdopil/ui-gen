@@ -33,7 +33,7 @@ export interface Storage {
     screenId: string,
     dialogId: string,
     arrows: Array<{
-      overlayIndex: number;
+      touchableId: string;
       targetScreenId: string;
       startPoint?: { x: number; y: number };
     }>,
@@ -195,7 +195,7 @@ class ApiStorage implements Storage {
     screenId: string,
     dialogId: string,
     arrows: Array<{
-      overlayIndex: number;
+      touchableId: string;
       targetScreenId: string;
       startPoint?: { x: number; y: number };
     }>,

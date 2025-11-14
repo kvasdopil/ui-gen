@@ -1,5 +1,5 @@
 export type ConversationPointArrow = {
-  overlayIndex: number; // Index of the clickable overlay in this conversation point's HTML
+  touchableId: string; // aria-roledescription value from the touchable element (<a> or <button>)
   targetScreenId: string; // Target screen id that this arrow points to
   startPoint?: { x: number; y: number }; // Optional: start point relative to screen center (for rendering)
 };
@@ -25,7 +25,7 @@ export type Arrow = {
   id: string;
   startScreenId: string;
   conversationPointIndex: number; // Index of the conversation point in the screen
-  overlayIndex: number; // Index of the clickable overlay on the start screen
+  touchableId: string; // aria-roledescription value from the touchable element (<a> or <button>)
   startPoint: { x: number; y: number }; // Relative to start screen center (content coordinates)
   endScreenId: string | null;
   endPoint: { x: number; y: number }; // Relative to end screen center (content coordinates)

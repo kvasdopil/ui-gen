@@ -62,7 +62,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       timestamp: Number(entry.timestamp),
       arrows:
         ((entry as { arrows?: unknown }).arrows as Array<{
-          overlayIndex: number;
+          touchableId: string;
           targetScreenId: string;
           startPoint?: { x: number; y: number };
         }>) || [],

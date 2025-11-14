@@ -7,7 +7,7 @@ const updateDialogEntrySchema = z.object({
   arrows: z
     .array(
       z.object({
-        overlayIndex: z.number(),
+        touchableId: z.string(),
         targetScreenId: z.string(),
         startPoint: z
           .object({
@@ -75,7 +75,7 @@ export async function PUT(
       timestamp: Number(updatedEntry.timestamp),
       arrows:
         (updatedEntry.arrows as Array<{
-          overlayIndex: number;
+          touchableId: string;
           targetScreenId: string;
           startPoint?: { x: number; y: number };
         }>) || [],

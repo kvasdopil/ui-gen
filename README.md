@@ -24,6 +24,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Clickable Prompts**: Click any prompt in the history to view its corresponding LLM output
 - ➕ **Empty Screen Support**: PromptPanel shows even for screens with no prompts yet, allowing you to add the first prompt via the "Modify" button
 - 🗑️ **Delete History Entries**: Delete conversation points from history; deleting the last entry removes the entire screen; all deletions are persisted to the database
+- ⌨️ **Keyboard Shortcuts**: Press Delete key when a screen is selected and the latest conversation point is selected to trigger the delete confirmation dialog
 - 🗑️ **Delete Screens**: Delete entire screens with all their conversation history; deletions are persisted to the database
 - 📊 **Output History**: Browse through all generated UI outputs by selecting different prompts from the history
 - 📋 **Clone Screens**: Clone a screen at any point in its conversation history, creating a new screen with full history up to that point (cloned screen is not auto-selected)
@@ -43,8 +44,10 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
 - ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom; clicking on touchable overlays starts link creation instead of dragging the screen
-- 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by clickable index and contains target screen ID, automatically saved when completed and restored on page reload
+- ➕ **Pending Arrow Button**: When dragging a link/button and dropping it in empty space, a round button with a + sign appears at the end of the arrow - clicking it creates a cloned screen with full conversation history and automatically generates a new screen based on the button's purpose
+- 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by touchable ID (aria-roledescription) and contains target screen ID, automatically saved when completed and restored on page reload
 - 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
+- ⏳ **Loading States**: Create button and pending arrow button show spinners and are disabled during screen creation/cloning to prevent double submissions
 
 ## User Stories
 
@@ -92,6 +95,10 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** create visual connections between screens by clicking on clickable overlays and dragging to other screens, **so that** I can document relationships and user flows between different screens
 - **As a** user, **I want** arrows to be automatically saved with my conversation history, **so that** my screen connections persist across page reloads
 - **As a** user, **I want** arrows to be associated with specific conversation points, **so that** each version of a screen can have its own set of connections
+- **As a** user, **I want to** create a new screen by dragging a link to empty space and clicking the button, **so that** I can quickly create follow-up screens in my user flow
+- **As a** user, **I want** the new screen to be a clone of the original with full conversation history, **so that** I have context for the new screen
+- **As a** user, **I want** the new screen to automatically generate based on the button I clicked, **so that** I don't have to manually describe what should happen next
+- **As a** user, **I want** loading indicators on buttons during screen creation, **so that** I know when operations are in progress and can avoid double submissions
 
 ### User Interface
 
@@ -109,6 +116,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want** deleted conversation points to be removed from the database, **so that** they don't reappear when I reload the page
 - **As a** user, **I want to** see a menu button appear when hovering over history entries, **so that** I can access actions for each entry
 - **As a** user, **I want to** see a delete option in the menu for the last history entry, **so that** I can easily remove it
+- **As a** user, **I want to** press the Delete key when the latest conversation point is selected, **so that** I can quickly trigger the delete confirmation dialog without using the mouse
 - **As a** user, **I want to** confirm before deleting a history entry, **so that** I don't accidentally lose my work
 - **As a** user, **I want** the previous entry to be selected automatically when I delete the currently selected entry, **so that** I can continue viewing history seamlessly
 - **As a** user, **I want** the entire screen to be removed when I delete the last remaining history entry, **so that** empty screens don't clutter my workspace
@@ -191,6 +199,8 @@ ui-gen/
 │   │   │   │   ├── route.ts         # GET, POST /api/screens
 │   │   │   │   └── [id]/
 │   │   │   │       ├── route.ts     # PUT, DELETE /api/screens/:id
+│   │   │   │       ├── clone/
+│   │   │   │       │   └── route.ts # POST /api/screens/:id/clone
 │   │   │   │       └── dialog/
 │   │   │   │           ├── route.ts # GET, POST /api/screens/:id/dialog
 │   │   │   │           └── [dialogId]/
@@ -396,21 +406,22 @@ yarn dev
 1. Select a screen to see its prompt history panel
 2. Hover over any entry in the history to reveal a menu button (three dots) on the right
 3. Click the menu button to open a dropdown menu with available actions
-4. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
+4. **Keyboard Shortcut**: Press the Delete key when the latest conversation point is selected to quickly trigger the delete confirmation dialog (only works when not typing in an input field)
+5. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
    - The exported HTML includes a comment block at the top with all prompts used to generate that version
    - Prompt history is formatted as: `(prompt1)` separated by `--` between prompts
    - A toast notification will appear confirming the copy: "Screen {screen name} is copied to clipboard"
    - The HTML is ready to use in other projects
-5. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
+6. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
    - The cloned screen will have a new unique ID
    - It will be positioned 50px offset from the original screen
    - The cloned screen will not be auto-selected (you can click it to select it)
    - The cloned point will be selected in the new screen
-6. **Delete**: Click "Delete" on the last entry to remove it from history
+7. **Delete**: Click "Delete" on the last entry to remove it from history
    - A confirmation dialog will appear before deletion
    - If you delete the currently selected entry, the previous entry will be automatically selected
    - If you delete the last remaining entry, the entire screen will be removed
-7. All changes are saved immediately to persistent storage
+8. All changes are saved immediately to persistent storage
 
 ### Making Modifications
 
@@ -436,17 +447,25 @@ yarn dev
 2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow - this will NOT drag the screen, it will start link creation instead
 3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor and remain visible even when you move the mouse outside the screen boundaries
 4. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
-5. **Cancel**: Release the mouse button outside of any screen to cancel arrow creation
-6. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
-7. **One Arrow Per Overlay**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
-8. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
-9. **Efficient Persistence**: Arrows are only saved to the server when you complete or remove them (on mouse release) - no server updates while dragging
-10. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
-11. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
-12. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
-13. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
-14. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
-15. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
+5. **Create New Screen from Pending Arrow**: Release the mouse button in empty space to show a round button with a + sign at the end of the arrow - clicking this button will:
+   - Clone the original screen with all conversation points up to and including the active one
+   - Create a new screen at the button location
+   - Add a new dialog entry with prompt: "Create a screen that should be shown after user presses at '{button name}'" (where button name comes from the aria-roledescription attribute)
+   - Automatically start HTML generation for the new screen
+   - Update the arrow in the original screen to point to the newly created cloned screen
+   - The button shows a spinner and is disabled during cloning to prevent double submissions
+6. **Cancel**: Click on a screen or empty space (but not on the button) to dismiss a pending arrow
+7. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
+8. **One Arrow Per Touchable**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
+9. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
+10. **Efficient Persistence**: Arrows are only saved to the server when you complete or remove them (on mouse release) - no server updates while dragging
+11. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
+12. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
+13. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
+14. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
+15. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
+16. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
+17. **Touchable ID**: Arrows are identified by touchable ID (aria-roledescription attribute) rather than index, ensuring stable identification even when elements change
 
 ### Example Prompts
 
@@ -511,6 +530,13 @@ All endpoints require authentication (OAuth user session).
 - `GET /api/screens/:id/dialog` - List all dialog entries for a screen
 - `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically)
 - `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
+
+**Screen Cloning:**
+
+- `POST /api/screens/:id/clone` - Clone a screen up to a specific conversation point (requires `convPointId`, `x`, `y` coordinates)
+  - Creates a new screen with all dialog entries up to and including the specified conversation point
+  - Preserves conversation history and HTML content
+  - Sets `selectedPromptIndex` to the cloned conversation point
 
 **Deprecated:**
 
@@ -584,7 +610,7 @@ All endpoints require authentication (OAuth user session).
   - Z-index management: newer screens appear above older ones, selected screens always on top
   - **Double-Click Handler**: Centers camera and zooms to 100% when double-clicking screens
   - **Arrow Management**: Creates and stores arrows in conversation point metadata
-    - Stores arrows in `ConversationPoint.arrows` array with `overlayIndex` and `targetScreenId`
+    - Stores arrows in `ConversationPoint.arrows` array with `touchableId` (aria-roledescription) and `targetScreenId`
     - Renders arrows from all conversation points across all screens
     - Uses actual screen height from `ScreenData.height` for boundary calculations
     - Arrows are persisted to database only when completed (released over screen) or removed - no server updates while dragging
@@ -616,7 +642,7 @@ All endpoints require authentication (OAuth user session).
     - Arrows use Bezier curves that connect screen boundaries perpendicularly
     - Each overlay can only have one outgoing arrow (new arrows replace old ones)
     - **Persistent Storage**: Arrows are stored in `ConversationPoint.arrows` array along with HTML metadata
-    - Each arrow contains: `overlayIndex` (clickable index), `targetScreenId` (destination screen), and optional `startPoint` (relative to screen center)
+    - Each arrow contains: `touchableId` (aria-roledescription value from the touchable element), `targetScreenId` (destination screen), and optional `startPoint` (relative to screen center)
     - Arrows are automatically saved to database when completed (via `PUT /api/screens/:id/dialog/:dialogId`) and restored on page reload
     - Stored as JSON in `DialogEntry.arrows` field in PostgreSQL database
     - Arrows move with screens when you drag them
@@ -824,5 +850,5 @@ These can be adjusted in `src/lib/ui-generation.ts`
 - [ ] Custom Tailwind configuration
 - [ ] Better error handling and user feedback
 - [ ] Streaming responses for faster perceived performance
-- [ ] Keyboard shortcuts for navigation
+- [x] Keyboard shortcuts for deleting conversation points (Delete key)
 - [ ] Screen arrangement/organization tools

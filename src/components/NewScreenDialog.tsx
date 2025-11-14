@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef } from "react";
-import { FaMagic } from "react-icons/fa";
+import { FaMagic, FaSpinner } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -58,7 +58,7 @@ const NewScreenDialog = forwardRef<HTMLDivElement, NewScreenDialogProps>(
             disabled={disabled || !value.trim()}
             className="flex items-center justify-center gap-2 text-sm"
           >
-            <FaMagic />
+            {disabled ? <FaSpinner className="animate-spin" /> : <FaMagic />}
             <span>Create</span>
           </Button>
         </Card>

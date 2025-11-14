@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, signIn } from "next-auth/react";
+import { FaSpinner } from "react-icons/fa";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
@@ -38,6 +39,7 @@ export default function Home() {
   const justFinishedDraggingRef = useRef<string | null>(null);
   const [isCreateScreenPopupMode, setIsCreateScreenPopupMode] = useState(false);
   const [isNewScreenMode, setIsNewScreenMode] = useState(false);
+  const [isCreatingScreen, setIsCreatingScreen] = useState(false);
   const [newScreenInput, setNewScreenInput] = usePersistentState<string>("newScreenInput", "", 300);
   const [newScreenPosition, setNewScreenPosition] = useState({ x: 0, y: 0 });
   const newScreenFormRef = useRef<HTMLDivElement>(null);
@@ -47,8 +49,11 @@ export default function Home() {
     start: { x: number; y: number };
     end: { x: number; y: number };
     startScreenId: string;
-    overlayIndex: number;
+    touchableId: string; // aria-roledescription value from the touchable element
+    text: string;
+    isPending?: boolean; // True when dropped in empty space, waiting for button click
   } | null>(null);
+  const [isCloningScreen, setIsCloningScreen] = useState(false);
   const hoveredScreenIdRef = useRef<string | null>(null);
 
   // Handle screen dragging and selection
@@ -313,9 +318,9 @@ export default function Home() {
               // Initialize arrows array if it doesn't exist
               const existingArrows = conversationPoint.arrows || [];
 
-              // Remove any existing arrow from the same overlay index
+              // Remove any existing arrow from the same touchable
               const filteredArrows = existingArrows.filter(
-                (arrow) => arrow.overlayIndex !== arrowLine.overlayIndex,
+                (arrow) => arrow.touchableId !== arrowLine.touchableId,
               );
 
               // Convert start point from viewport coordinates to content coordinates relative to start screen center
@@ -334,7 +339,7 @@ export default function Home() {
 
               // Add the new arrow
               const newArrow: ConversationPointArrow = {
-                overlayIndex: arrowLine.overlayIndex,
+                touchableId: arrowLine.touchableId,
                 targetScreenId: endScreenId,
                 startPoint: { x: startRelativeX, y: startRelativeY },
               };
@@ -368,20 +373,50 @@ export default function Home() {
               }
             }
           }
+          // Clear arrow state after saving
+          console.log("[page] Clearing arrow state after saving");
+          setArrowLine(null);
+          hoveredScreenIdRef.current = null;
+          setIsMouseDown(false);
+          isMouseDownRef.current = false;
+          return;
+        } else {
+          // Dropped in empty space - keep arrow in pending state with button
+          console.log("[page] Arrow dropped in empty space, keeping in pending state");
+          setArrowLine({
+            ...arrowLine,
+            isPending: true,
+          });
+          hoveredScreenIdRef.current = null;
+          setIsMouseDown(false);
+          isMouseDownRef.current = false;
+          return;
         }
-
-        // Cancel arrow creation (clear state) regardless of whether it was saved
-        console.log("[page] Clearing arrow state", { wasSaved: !!endScreenId });
-        setArrowLine(null);
-        hoveredScreenIdRef.current = null;
-        setIsMouseDown(false);
-        isMouseDownRef.current = false;
-        return;
-      } else {
-        console.log("[page] handleMouseUp: no arrowLine");
       }
 
       // Left click on empty space now only deselects (popup moved to right-click)
+      // Also clear pending arrow if clicking on empty space (but not on the button itself)
+      // Check for pending arrow separately since it might exist even when not actively dragging
+      if (e) {
+        const target = e.target as HTMLElement;
+        // Check if there's a pending arrow and we're not clicking on the button itself
+        // Use type assertion to help TypeScript understand that arrowLine can be pending
+        const pendingArrow = arrowLine as {
+          isPending: true;
+          start: { x: number; y: number };
+          end: { x: number; y: number };
+          startScreenId: string;
+          touchableId: string;
+          text: string;
+        } | null;
+        if (
+          pendingArrow &&
+          pendingArrow.isPending &&
+          !target.closest("button[aria-label='Create new screen']")
+        ) {
+          setArrowLine(null);
+        }
+      }
 
       // Handle screen click vs drag
       if (draggedScreenId) {
@@ -611,9 +646,174 @@ export default function Home() {
     // centerAndZoomScreen(newScreen.id);
   }, []);
 
+  // Handle creating a new screen from pending arrow button
+  const handleCreateScreenFromPendingArrow = useCallback(async () => {
+    if (!arrowLine || !arrowLine.isPending || isCloningScreen) return;
+
+    setIsCloningScreen(true);
+
+    try {
+      // Find the original screen from which the arrow is drawn
+      const originalScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+      if (!originalScreen) {
+        console.error("Original screen not found for cloning");
+        setIsCloningScreen(false);
+        return;
+      }
+
+      // Get the active conversation point index (selected or last one)
+      const activePointIndex =
+        originalScreen.selectedPromptIndex !== null
+          ? originalScreen.selectedPromptIndex
+          : originalScreen.conversationPoints.length > 0
+            ? originalScreen.conversationPoints.length - 1
+            : null;
+
+      if (
+        activePointIndex === null ||
+        activePointIndex >= originalScreen.conversationPoints.length
+      ) {
+        console.error("No active conversation point found");
+        setIsCloningScreen(false);
+        return;
+      }
+
+      // Get the active conversation point ID (required for clone endpoint)
+      const activePoint = originalScreen.conversationPoints[activePointIndex];
+      if (!activePoint.id) {
+        console.error("Active conversation point has no ID");
+        setIsCloningScreen(false);
+        return;
+      }
+
+      // Create prompt for the new dialog entry
+      const prompt = `Create a screen that should be shown after user presses at '${arrowLine.touchableId}'`;
+
+      // Convert arrow end position from viewport coordinates to content coordinates
+      const viewportToContent = viewportHandleRef.current?.viewportToContent;
+      if (!viewportToContent) {
+        setIsCloningScreen(false);
+        return;
+      }
+
+      const contentPos = viewportToContent(arrowLine.end.x, arrowLine.end.y);
+      const contentX = snapToGrid(contentPos.x);
+      const contentY = snapToGrid(contentPos.y);
+
+      // Step 1: Clone the screen using the clone endpoint
+      const cloneResponse = await fetch(`/api/screens/${arrowLine.startScreenId}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          convPointId: activePoint.id,
+          x: contentX,
+          y: contentY,
+        }),
+      });
+
+      if (!cloneResponse.ok) {
+        if (cloneResponse.status === 401) {
+          // Save prompt and position for restoration after auth
+          await storage.savePendingPrompt(prompt, null, { x: contentX, y: contentY });
+          // Trigger sign in - will redirect back after auth
+          signIn("google", { callbackUrl: window.location.href });
+          setIsCloningScreen(false);
+          return;
+        }
+        throw new Error("Failed to clone screen");
+      }
+
+      const clonedScreen: ScreenData = await cloneResponse.json();
+
+      // Step 2: Add new dialog entry to the cloned screen with the prompt
+      const timestamp = Date.now();
+      const screenWithNewEntry: ScreenData = {
+        ...clonedScreen,
+        conversationPoints: [
+          ...clonedScreen.conversationPoints,
+          // Add new incomplete conversation point for the new dialog entry
+          {
+            prompt,
+            html: "",
+            title: null,
+            timestamp,
+            arrows: [],
+          },
+        ],
+        selectedPromptIndex: clonedScreen.conversationPoints.length, // Select the new point
+      };
+
+      // Add cloned screen immediately with new incomplete conversation point
+      setScreens((prevScreens) => [...prevScreens, screenWithNewEntry]);
+
+      // Step 3: Update the arrow in the original screen's conversation point to point to the cloned screen
+      const updatedArrows = [
+        ...(activePoint.arrows || []).filter(
+          (arrow) => arrow.touchableId !== arrowLine.touchableId,
+        ),
+        {
+          touchableId: arrowLine.touchableId,
+          targetScreenId: clonedScreen.id,
+          startPoint: {
+            // Calculate start point relative to screen center
+            x: originalScreen.position
+              ? viewportToContent(arrowLine.start.x, arrowLine.start.y).x -
+                originalScreen.position.x
+              : 0,
+            y: originalScreen.position
+              ? viewportToContent(arrowLine.start.x, arrowLine.start.y).y -
+                originalScreen.position.y
+              : 0,
+          },
+        },
+      ];
+
+      setScreens((prevScreens) => {
+        const screenIndex = prevScreens.findIndex((s) => s.id === arrowLine.startScreenId);
+        if (screenIndex === -1) return prevScreens;
+
+        const screen = prevScreens[screenIndex];
+        const updatedConversationPoints = [...screen.conversationPoints];
+        updatedConversationPoints[activePointIndex] = {
+          ...activePoint,
+          arrows: updatedArrows,
+        };
+
+        const updatedScreens = [...prevScreens];
+        updatedScreens[screenIndex] = {
+          ...screen,
+          conversationPoints: updatedConversationPoints,
+        };
+        return updatedScreens;
+      });
+
+      // Persist the arrow to the database
+      if (activePoint.id) {
+        storage
+          .updateDialogEntryArrows(arrowLine.startScreenId, activePoint.id, updatedArrows)
+          .catch((error) => {
+            console.error("Error saving arrow to database:", error);
+          });
+      }
+
+      // The Screen component's auto-generation effect will handle creating the dialog entry
+      // for the new incomplete point and starting HTML generation
+
+      // Clear the pending arrow
+      setArrowLine(null);
+    } catch (error) {
+      console.error("Error creating screen from pending arrow:", error);
+      // TODO: Show error to user
+    } finally {
+      setIsCloningScreen(false);
+    }
+  }, [arrowLine, screens, isCloningScreen]);
+
   // Handle creating a new screen from the form
   const handleCreateNewScreen = useCallback(async () => {
-    if (!newScreenInput.trim()) return;
+    if (!newScreenInput.trim() || isCreatingScreen) return;
+
+    setIsCreatingScreen(true);
 
     // Convert from browser viewport coordinates (clientX, clientY) to viewport container coordinates,
     // then to content coordinates
@@ -649,6 +849,7 @@ export default function Home() {
           await storage.savePendingPrompt(prompt, null, { x: contentX, y: contentY });
           // Trigger sign in - will redirect back after auth
           signIn("google", { callbackUrl: window.location.href });
+          setIsCreatingScreen(false);
           return;
         }
         throw new Error("Failed to create screen");
@@ -679,14 +880,16 @@ export default function Home() {
       // Close the form and clear input
       setIsNewScreenMode(false);
       setNewScreenInput("");
+      setIsCreatingScreen(false);
 
       // Don't auto-center/zoom - this disrupts the viewport when creating multiple screens
       // centerAndZoomScreen(newScreen.id);
     } catch (error) {
       console.error("Error creating screen:", error);
       // TODO: Show error to user
+      setIsCreatingScreen(false);
     }
-  }, [newScreenInput, newScreenPosition, setNewScreenInput]);
+  }, [newScreenInput, newScreenPosition, setNewScreenInput, isCreatingScreen]);
 
   // Handle screen update
   const handleScreenUpdate = useCallback((screenId: string, updates: Partial<ScreenData>) => {
@@ -722,6 +925,10 @@ export default function Home() {
 
   // Handle screen click
   const handleScreenClick = (screenId: string) => {
+    // Clear pending arrow when clicking on a screen
+    if (arrowLine?.isPending) {
+      setArrowLine(null);
+    }
     // Don't select if we just finished dragging this screen
     if (justFinishedDraggingRef.current === screenId) {
       return;
@@ -794,8 +1001,12 @@ export default function Home() {
 
   // Handle overlay click - start arrow from center of clicked overlay
   const handleOverlayClick = useCallback(
-    (center: { x: number; y: number }, screenId: string, overlayIndex: number) => {
-      console.log("[page] handleOverlayClick called", { center, screenId, overlayIndex });
+    (center: { x: number; y: number }, screenId: string, touchableId: string, text: string) => {
+      console.log("[page] handleOverlayClick called", { center, screenId, touchableId, text });
+      // Clear any pending arrow when starting a new one
+      if (arrowLine?.isPending) {
+        setArrowLine(null);
+      }
       const viewportElement = viewportHandleRef.current?.getElement();
       const rect = viewportElement?.getBoundingClientRect();
       console.log("[page] Viewport element and rect", { hasElement: !!viewportElement, rect });
@@ -806,12 +1017,13 @@ export default function Home() {
         // Convert from viewport (browser window) coordinates to viewport container coordinates
         const startX = center.x - rect.left;
         const startY = center.y - rect.top;
-        console.log("[page] Setting arrowLine", { startX, startY, screenId, overlayIndex });
+        console.log("[page] Setting arrowLine", { startX, startY, screenId, touchableId, text });
         setArrowLine({
           start: { x: startX, y: startY },
           end: { x: startX, y: startY },
           startScreenId: screenId,
-          overlayIndex,
+          touchableId,
+          text,
         });
         setIsMouseDown(true);
         isMouseDownRef.current = true; // Set ref so handleMouseMove can track arrow drawing
@@ -823,7 +1035,7 @@ export default function Home() {
         console.warn("[page] No viewport rect available!");
       }
     },
-    [],
+    [arrowLine],
   );
 
   // Effect to center screen after selection - DISABLED
@@ -952,12 +1164,45 @@ export default function Home() {
                   }
                 : undefined;
               return (
-                <ArrowLine
-                  start={{ x: startContentX, y: startContentY }}
-                  end={{ x: endContentX, y: endContentY }}
-                  startScreenBounds={startScreenBounds}
-                  endScreenBounds={endScreenBounds}
-                />
+                <>
+                  <ArrowLine
+                    start={{ x: startContentX, y: startContentY }}
+                    end={{ x: endContentX, y: endContentY }}
+                    startScreenBounds={startScreenBounds}
+                    endScreenBounds={endScreenBounds}
+                  />
+                  {arrowLine.isPending && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCreateScreenFromPendingArrow();
+                      }}
+                      disabled={isCloningScreen}
+                      className="absolute z-50 flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-400 bg-white shadow-md transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-400 disabled:hover:bg-white"
+                      style={{
+                        left: `${endContentX - 20}px`,
+                        top: `${endContentY - 20}px`,
+                        transform: "translate(0, 0)",
+                      }}
+                      aria-label="Create new screen"
+                    >
+                      {isCloningScreen ? (
+                        <FaSpinner className="h-5 w-5 animate-spin text-gray-600" />
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          className="h-5 w-5 text-gray-600"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
+                </>
               );
             })()}
           {/* Render all stored arrows from conversation points */}
@@ -1084,6 +1329,7 @@ export default function Home() {
           onChange={setNewScreenInput}
           onSubmit={handleCreateNewScreen}
           onDismiss={() => setIsNewScreenMode(false)}
+          disabled={isCreatingScreen}
         />
       )}
     </>

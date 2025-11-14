@@ -5,7 +5,7 @@ import { FaSpinner } from "react-icons/fa";
 import { TbHandClick } from "react-icons/tb";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import PromptPanel from "./PromptPanel";
+import PromptPanel, { type PromptPanelHandle } from "./PromptPanel";
 import type { ScreenData, ConversationPoint } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
@@ -20,7 +20,8 @@ interface ScreenProps {
   onOverlayClick?: (
     center: { x: number; y: number },
     screenId: string,
-    overlayIndex: number,
+    touchableId: string,
+    text: string,
   ) => void;
   screenData: ScreenData | null;
   onCenterAndZoom: (screenId: string) => void;
@@ -53,9 +54,18 @@ export default function Screen({
   const iframeWindowRef = useRef<Window | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [highlights, setHighlights] = useState<
-    Array<{ type: "a" | "button"; x: number; y: number; width: number; height: number }>
+    Array<{
+      type: "a" | "button";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      text: string;
+      touchableId: string; // aria-roledescription value from the element
+    }>
   >([]);
   const [showClickables, setShowClickables] = useState(false);
+  const promptPanelRef = useRef<PromptPanelHandle>(null);
 
   // Extract title from HTML content
   const extractTitle = (html: string): string | null => {
@@ -305,6 +315,40 @@ export default function Screen({
     setIframeHeight(844); // Reset to default when content changes
   }, [htmlContent]);
 
+  // Handle Delete key to trigger delete for latest conversation point
+  useEffect(() => {
+    if (!isSelected) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Delete key
+      if (e.key !== "Delete") return;
+
+      // Don't trigger if user is typing in an input/textarea
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement.tagName === "INPUT" ||
+          activeElement.tagName === "TEXTAREA" ||
+          (activeElement as HTMLElement).isContentEditable)
+      ) {
+        return;
+      }
+
+      // Check if latest conversation point is selected
+      const lastIndex = conversationPoints.length - 1;
+      if (lastIndex < 0) return; // No conversation points
+
+      // Only trigger if the latest point is explicitly selected
+      if (selectedPromptIndex === lastIndex && promptPanelRef.current) {
+        e.preventDefault();
+        promptPanelRef.current.triggerDelete(lastIndex);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSelected, conversationPoints.length, selectedPromptIndex]);
+
   // Function to update highlights from iframe content
   const updateHighlights = useCallback(() => {
     if (!iframeRef.current || !containerRef.current || !htmlContent) {
@@ -326,6 +370,8 @@ export default function Screen({
         y: number;
         width: number;
         height: number;
+        text: string;
+        touchableId: string;
       }> = [];
 
       // Get iframe's position within container (accounts for border)
@@ -356,6 +402,14 @@ export default function Screen({
       links.forEach((link) => {
         const pos = getElementPositionInIframe(link);
         const rect = link.getBoundingClientRect();
+        // Extract text content from link
+        const text = link.textContent?.trim() || link.getAttribute("aria-label") || "";
+        // Extract aria-roledescription as touchableId (required attribute)
+        const touchableId = link.getAttribute("aria-roledescription");
+        if (!touchableId) {
+          console.warn("[Screen] Link element missing aria-roledescription:", link);
+          return; // Skip elements without aria-roledescription
+        }
         // Position relative to container = position in iframe + iframe offset in container
         newHighlights.push({
           type: "a",
@@ -363,6 +417,8 @@ export default function Screen({
           y: pos.y + iframeOffsetY,
           width: rect.width,
           height: rect.height,
+          text,
+          touchableId,
         });
       });
 
@@ -371,6 +427,14 @@ export default function Screen({
       buttons.forEach((button) => {
         const pos = getElementPositionInIframe(button);
         const rect = button.getBoundingClientRect();
+        // Extract text content from button
+        const text = button.textContent?.trim() || button.getAttribute("aria-label") || "";
+        // Extract aria-roledescription as touchableId (required attribute)
+        const touchableId = button.getAttribute("aria-roledescription");
+        if (!touchableId) {
+          console.warn("[Screen] Button element missing aria-roledescription:", button);
+          return; // Skip elements without aria-roledescription
+        }
         // Position relative to container = position in iframe + iframe offset in container
         newHighlights.push({
           type: "button",
@@ -378,6 +442,8 @@ export default function Screen({
           y: pos.y + iframeOffsetY,
           width: rect.width,
           height: rect.height,
+          text,
+          touchableId,
         });
       });
 
@@ -745,6 +811,7 @@ export default function Screen({
         {/* Prompt Panel - positioned at top-right, outside Screen container - only show when selected */}
         {isSelected && screenData && (
           <PromptPanel
+            ref={promptPanelRef}
             conversationPoints={conversationPoints}
             onSend={handleSend}
             isLoading={isLoading}
@@ -841,11 +908,11 @@ export default function Screen({
                     height: `${iframeHeight}px`,
                   }}
                 >
-                  {highlights.map((highlight, index) => {
+                  {highlights.map((highlight) => {
                     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
                       console.log("[Screen] Overlay mousedown", {
                         screenId: id,
-                        overlayIndex: index,
+                        touchableId: highlight.touchableId,
                         highlightType: highlight.type,
                       });
                       e.stopPropagation();
@@ -857,9 +924,15 @@ export default function Screen({
                           centerX,
                           centerY,
                           screenId: id,
-                          overlayIndex: index,
+                          touchableId: highlight.touchableId,
+                          text: highlight.text,
                         });
-                        onOverlayClick({ x: centerX, y: centerY }, id, index);
+                        onOverlayClick(
+                          { x: centerX, y: centerY },
+                          id,
+                          highlight.touchableId,
+                          highlight.text,
+                        );
                       } else {
                         console.warn("[Screen] onOverlayClick is not defined!");
                       }
@@ -867,7 +940,7 @@ export default function Screen({
 
                     return (
                       <div
-                        key={index}
+                        key={highlight.touchableId}
                         className="absolute cursor-crosshair border-2"
                         data-overlay-highlight
                         style={{
