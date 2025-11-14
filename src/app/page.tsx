@@ -2,12 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { FaSpinner } from "react-icons/fa";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
 import NewScreenDialog from "@/components/NewScreenDialog";
 import ArrowLine from "@/components/ArrowLine";
+import CreateFromTouchableButton from "@/components/CreateFromTouchableButton";
 import Viewport, { type ViewportHandle } from "@/components/Viewport";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import type { ScreenData, ConversationPointArrow } from "@/lib/types";
@@ -97,6 +97,10 @@ export default function Home() {
       const screen = screens.find((s) => s.id === screenId);
 
       if (screen && screen.position) {
+        // Clear pending arrow when clicking on a screen (will start new drag or selection)
+        if (arrowLine?.isPending) {
+          setArrowLine(null);
+        }
         // If dragging a different screen, deselect the current one
         if (screen.id !== selectedScreenId) {
           setSelectedScreenId(null);
@@ -129,9 +133,17 @@ export default function Home() {
     const isEmptySpace = isWithinViewport && !screenContainer;
 
     if (isEmptySpace) {
+      // Clear pending arrow when clicking on viewport (but not on the button itself)
+      if (arrowLine?.isPending) {
+        const isButtonClick = target.closest("button[aria-label='Create new screen']") !== null;
+        if (!isButtonClick) {
+          setArrowLine(null);
+        }
+      }
       // Unselect screen when clicking on empty space
       setSelectedScreenId(null);
       // Dismiss popup and dialog when clicking on empty space
+      // (These are also dismissed at the top of handleMouseDown, but ensure they're dismissed here too)
       if (isCreateScreenPopupMode) {
         setIsCreateScreenPopupMode(false);
       }
@@ -140,6 +152,16 @@ export default function Home() {
       }
       setIsMouseDown(true);
       isMouseDownRef.current = true; // Track with ref for reliable state
+    } else if (isWithinViewport) {
+      // Clicking on viewport (but might be on a screen or other element)
+      // Still dismiss dialogs if they're open (unless clicking on the dialog itself)
+      // This handles cases where dialogs might be blocking viewport clicks
+      if (isCreateScreenPopupMode) {
+        setIsCreateScreenPopupMode(false);
+      }
+      if (isNewScreenMode) {
+        setIsNewScreenMode(false);
+      }
     }
   };
 
@@ -1052,7 +1074,43 @@ export default function Home() {
         // Load screens
         const loadedScreens = await storage.loadScreens();
         if (loadedScreens.length > 0) {
-          setScreens(loadedScreens);
+          // Get all screen IDs for validation
+          const screenIds = new Set(loadedScreens.map((s) => s.id));
+
+          // Clean up invalid arrows (arrows without valid targetScreenId)
+          const cleanedScreens = loadedScreens.map((screen) => {
+            const cleanedConversationPoints = screen.conversationPoints.map((point) => {
+              const arrows = point.arrows || [];
+              const validArrows = arrows.filter(
+                (arrow) => arrow.targetScreenId && screenIds.has(arrow.targetScreenId),
+              );
+
+              // If there are invalid arrows, update the screen
+              if (validArrows.length !== arrows.length && point.id) {
+                // Update database asynchronously
+                storage
+                  .updateDialogEntryArrows(screen.id, point.id, validArrows)
+                  .catch((error) => {
+                    console.error(
+                      `Error cleaning up invalid arrows for dialog entry ${point.id}:`,
+                      error,
+                    );
+                  });
+              }
+
+              return {
+                ...point,
+                arrows: validArrows,
+              };
+            });
+
+            return {
+              ...screen,
+              conversationPoints: cleanedConversationPoints,
+            };
+          });
+
+          setScreens(cleanedScreens);
         }
       } catch (error) {
         console.error("Error loading data:", error);
@@ -1163,6 +1221,10 @@ export default function Home() {
                     height: endScreen.height || 844,
                   }
                 : undefined;
+              // Check if arrow is active (related to selected screen)
+              const isActive =
+                selectedScreenId === arrowLine.startScreenId ||
+                selectedScreenId === endScreenId;
               return (
                 <>
                   <ArrowLine
@@ -1170,37 +1232,15 @@ export default function Home() {
                     end={{ x: endContentX, y: endContentY }}
                     startScreenBounds={startScreenBounds}
                     endScreenBounds={endScreenBounds}
+                    isActive={isActive}
+                    markerId={`arrow-${arrowLine.startScreenId}-${endScreenId || "pending"}`}
                   />
                   {arrowLine.isPending && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCreateScreenFromPendingArrow();
-                      }}
+                    <CreateFromTouchableButton
+                      position={{ x: endContentX, y: endContentY }}
+                      onClick={handleCreateScreenFromPendingArrow}
                       disabled={isCloningScreen}
-                      className="absolute z-50 flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-400 bg-white shadow-md transition-all hover:border-blue-500 hover:bg-blue-50 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-gray-400 disabled:hover:bg-white"
-                      style={{
-                        left: `${endContentX - 20}px`,
-                        top: `${endContentY - 20}px`,
-                        transform: "translate(0, 0)",
-                      }}
-                      aria-label="Create new screen"
-                    >
-                      {isCloningScreen ? (
-                        <FaSpinner className="h-5 w-5 animate-spin text-gray-600" />
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5 text-gray-600"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                        </svg>
-                      )}
-                    </button>
+                    />
                   )}
                 </>
               );
@@ -1212,8 +1252,15 @@ export default function Home() {
             return screen.conversationPoints.flatMap(
               (conversationPoint, conversationPointIndex) => {
                 const arrows = conversationPoint.arrows || [];
-                return arrows.map((arrow, arrowIndex) => {
-                  const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+                // Filter out arrows without valid targetScreenId
+                return arrows
+                  .filter((arrow) => {
+                    if (!arrow.targetScreenId) return false;
+                    const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
+                    return !!endScreen;
+                  })
+                  .map((arrow, arrowIndex) => {
+                    const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
 
                   // Calculate start point: use stored startPoint if available, otherwise use screen center
                   const startContentX = arrow.startPoint
@@ -1242,6 +1289,9 @@ export default function Home() {
                       }
                     : undefined;
 
+                  // Check if arrow is active (related to selected screen)
+                  const isActive =
+                    selectedScreenId === screen.id || selectedScreenId === endScreen?.id;
                   return (
                     <ArrowLine
                       key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
@@ -1249,6 +1299,8 @@ export default function Home() {
                       end={{ x: endContentX, y: endContentY }}
                       startScreenBounds={startScreenBounds}
                       endScreenBounds={endScreenBounds}
+                      isActive={isActive}
+                      markerId={`arrow-${screen.id}-${arrow.targetScreenId}-${conversationPointIndex}-${arrowIndex}`}
                     />
                   );
                 });

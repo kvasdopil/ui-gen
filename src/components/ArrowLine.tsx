@@ -3,6 +3,8 @@ interface ArrowLineProps {
   end: { x: number; y: number }; // Content coordinates
   startScreenBounds?: { x: number; y: number; width: number; height: number }; // Content coordinates
   endScreenBounds?: { x: number; y: number; width: number; height: number }; // Content coordinates
+  isActive?: boolean; // Whether this arrow is related to the active/selected screen
+  markerId?: string; // Unique marker ID for this arrow instance
 }
 
 // Helper to find intersection of a line with a rectangle
@@ -105,6 +107,8 @@ export default function ArrowLine({
   end,
   startScreenBounds,
   endScreenBounds,
+  isActive = false,
+  markerId,
 }: ArrowLineProps) {
   // Start from overlay center, end at screen center (or mouse position)
   const startPoint = start;
@@ -234,6 +238,11 @@ export default function ArrowLine({
         `C ${parseFloat(x1) - minX} ${parseFloat(y1) - minY}, ${parseFloat(x2) - minX} ${parseFloat(y2) - minY}, ${parseFloat(x3) - minX} ${parseFloat(y3) - minY}`,
     );
 
+  // Use dark gray for active arrows, lighter gray for inactive
+  const strokeColor = isActive ? "#6b7280" : "#d1d5db";
+  // Use provided markerId or generate a unique one
+  const uniqueMarkerId = markerId || `arrowhead-${Math.random().toString(36).substring(2, 11)}`;
+
   return (
     <svg
       className="pointer-events-none absolute z-50"
@@ -246,16 +255,23 @@ export default function ArrowLine({
       viewBox={`0 0 ${width} ${height}`}
     >
       <defs>
-        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-          <polygon points="0 0, 10 3, 0 6" fill="#6b7280" />
+        <marker
+          id={uniqueMarkerId}
+          markerWidth="10"
+          markerHeight="10"
+          refX="9"
+          refY="3"
+          orient="auto"
+        >
+          <polygon points="0 0, 10 3, 0 6" fill={strokeColor} />
         </marker>
       </defs>
       <path
         d={adjustedPath}
-        stroke="#6b7280"
+        stroke={strokeColor}
         strokeWidth="2"
         fill="none"
-        markerEnd="url(#arrowhead)"
+        markerEnd={`url(#${uniqueMarkerId})`}
       />
     </svg>
   );

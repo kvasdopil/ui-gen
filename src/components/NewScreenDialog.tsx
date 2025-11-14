@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, useEffect } from "react";
 import { FaMagic, FaSpinner } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,7 +17,35 @@ interface NewScreenDialogProps {
 }
 
 const NewScreenDialog = forwardRef<HTMLDivElement, NewScreenDialogProps>(
-  ({ position, value, onChange, onSubmit, disabled = false }, ref) => {
+  ({ position, value, onChange, onSubmit, onDismiss, disabled = false }, ref) => {
+    // Handle click outside to dismiss
+    useEffect(() => {
+      // Don't add listeners during SSR
+      if (typeof window === "undefined" || typeof document === "undefined") {
+        return;
+      }
+
+      const handleClickOutside = (event: MouseEvent) => {
+        if (
+          typeof ref !== "function" &&
+          ref?.current &&
+          !ref.current.contains(event.target as Node)
+        ) {
+          onDismiss?.();
+        }
+      };
+
+      // Add event listener after a short delay to prevent immediate dismissal
+      const timeoutId = setTimeout(() => {
+        document.addEventListener("mousedown", handleClickOutside);
+      }, 0);
+
+      return () => {
+        clearTimeout(timeoutId);
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [onDismiss, ref]);
+
     const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();

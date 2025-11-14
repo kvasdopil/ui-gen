@@ -275,12 +275,50 @@ This file contains important technical notes, decisions, and gotchas for future 
     4. Updates the arrow in the original screen's conversation point to point to the cloned screen
     5. Persists the arrow to the database
     6. Screen component's auto-generation effect handles creating the dialog entry and starting HTML generation
-  - Button is cleared when clicking on screens or empty space (but not when clicking the button itself)
-  - Pending arrows are cleared when starting a new arrow drag
+  - Button is cleared when clicking on screens, viewport, or empty space (but not when clicking the button itself)
+  - Pending arrows are cleared when starting a new arrow drag from another touchable
+  - Only one pending button (CreateFromTouchableButton) exists at a time - starting a new arrow automatically removes the previous pending arrow
+  - Touchable remains unlinked until the button is clicked - arrow is only saved to database when button is clicked or when dropped on a screen
   - Touchable ID (aria-roledescription) is used to identify arrows instead of overlay index for stable identification
 - **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`
 
-### 21. Loading States for Screen Creation
+### 21. Arrow Color Coding and Visual Hierarchy
+
+- **Decision**: Use different colors for arrows based on whether they're connected to the selected screen
+- **Reason**: Provides better visual hierarchy and makes it easier to see which arrows are related to the active screen
+- **Implementation**:
+  - Arrows connected to the selected screen (either as start or end) are displayed in dark gray (#6b7280)
+  - All other arrows are shown in lighter gray (#d1d5db)
+  - Color is determined by checking if `selectedScreenId` matches either the start screen ID or end screen ID
+  - Both the arrow stroke and arrowhead marker use the same color
+  - Unique marker IDs are generated per arrow instance to avoid conflicts
+- **Location**: `src/components/ArrowLine.tsx`, `src/app/page.tsx`
+
+### 22. Invalid Arrow Cleanup
+
+- **Decision**: Automatically filter out and remove arrows pointing to deleted or non-existent screens
+- **Reason**: Maintains data integrity and prevents rendering errors when screens are deleted
+- **Implementation**:
+  - When loading screens from database, filter out arrows where `targetScreenId` doesn't match any existing screen
+  - Invalid arrows are removed from local state immediately
+  - Database is updated asynchronously to remove invalid arrows (doesn't block response)
+  - Cleanup happens both server-side (in API route) and client-side (on load)
+  - Arrows without `targetScreenId` are also filtered out
+- **Location**: `src/app/api/screens/route.ts`, `src/app/page.tsx`
+
+### 23. Dialog Dismissal on Viewport Click
+
+- **Decision**: Dismiss dialogs (NewScreenDialog, CreateScreenPopup) when clicking on viewport
+- **Reason**: Provides intuitive way to cancel dialog operations and clean up UI state
+- **Implementation**:
+  - Clicking on viewport (empty space or screens) dismisses both dialogs
+  - Also unselects current screen and removes pending arrows
+  - NewScreenDialog has click-outside handler (similar to CreateScreenPopup) that listens for clicks outside the dialog
+  - Viewport click handler in `handleMouseDown` also dismisses dialogs
+  - Early return checks prevent dismissal when clicking on the dialogs themselves
+- **Location**: `src/components/NewScreenDialog.tsx`, `src/app/page.tsx`
+
+### 24. Loading States for Screen Creation
 
 - **Decision**: Show loading spinners and disable buttons during screen creation/cloning operations
 - **Reason**: Prevents double submissions and provides clear visual feedback during async operations

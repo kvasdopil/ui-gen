@@ -44,10 +44,12 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
 - 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
 - ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom; clicking on touchable overlays starts link creation instead of dragging the screen
-- ➕ **Pending Arrow Button**: When dragging a link/button and dropping it in empty space, a round button with a + sign appears at the end of the arrow - clicking it creates a cloned screen with full conversation history and automatically generates a new screen based on the button's purpose
-- 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by touchable ID (aria-roledescription) and contains target screen ID, automatically saved when completed and restored on page reload
+- ➕ **Pending Arrow Button**: When dragging a link/button and dropping it in empty space, a round button with a + sign appears at the end of the arrow - clicking it creates a cloned screen with full conversation history and automatically generates a new screen based on the button's purpose; only one pending button exists at a time; the touchable remains unlinked until the button is clicked
+- 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by touchable ID (aria-roledescription) and contains target screen ID, automatically saved when completed and restored on page reload; invalid arrows (pointing to deleted screens) are automatically filtered out and removed from the database
+- 🎨 **Arrow Color Coding**: Arrows connected to the selected screen are displayed in dark gray, while all other arrows are shown in lighter gray for better visual hierarchy
 - 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
 - ⏳ **Loading States**: Create button and pending arrow button show spinners and are disabled during screen creation/cloning to prevent double submissions
+- 🖱️ **Dialog Dismissal**: Clicking on the viewport dismisses the new screen dialog and popup, unselects the current screen, and removes pending arrows
 
 ## User Stories
 
@@ -454,7 +456,7 @@ yarn dev
    - Automatically start HTML generation for the new screen
    - Update the arrow in the original screen to point to the newly created cloned screen
    - The button shows a spinner and is disabled during cloning to prevent double submissions
-6. **Cancel**: Click on a screen or empty space (but not on the button) to dismiss a pending arrow
+6. **Cancel**: Click on the viewport, a screen, or empty space (but not on the button) to dismiss a pending arrow; dragging from another touchable also removes the previous pending arrow
 7. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
 8. **One Arrow Per Touchable**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
 9. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
@@ -466,6 +468,10 @@ yarn dev
 15. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
 16. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
 17. **Touchable ID**: Arrows are identified by touchable ID (aria-roledescription attribute) rather than index, ensuring stable identification even when elements change
+18. **Single Pending Button**: Only one pending arrow button (CreateFromTouchableButton) exists at a time - starting a new arrow from another touchable automatically removes the previous pending arrow
+19. **Unlinked Until Clicked**: Touchables with pending arrows are considered unlinked until the button is clicked - the arrow is only saved to the database when the button is clicked or when dropped on a screen
+20. **Arrow Color Coding**: Arrows connected to the selected screen (either as start or end) are displayed in dark gray (#6b7280), while all other arrows are shown in lighter gray (#d1d5db) for better visual hierarchy
+21. **Invalid Arrow Cleanup**: Arrows pointing to deleted or non-existent screens are automatically filtered out when loading screens and removed from the database to maintain data integrity
 
 ### Example Prompts
 
@@ -676,6 +682,8 @@ All endpoints require authentication (OAuth user session).
   - Arrows scale with zoom and maintain consistent curvature
   - Arrow tip positioned at destination screen boundary
   - Uses SVG with viewBox for proper scaling
+  - **Color Coding**: Arrows connected to selected screen use dark gray (#6b7280), all other arrows use lighter gray (#d1d5db)
+  - Each arrow instance has a unique marker ID to avoid SVG marker conflicts
 - **PromptPanel.tsx**: History panel component displaying conversation and modification interface
   - Displays all conversation points (prompts) as clickable cards (or shows empty state with just "Modify" button for screens with no prompts)
   - Highlights the currently selected prompt with blue border and background

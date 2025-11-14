@@ -27,7 +27,10 @@ export async function GET() {
       },
     });
 
-    // Transform to match ScreenData type
+    // Get all screen IDs for validation
+    const screenIds = new Set(screens.map((s) => s.id));
+
+    // Transform to match ScreenData type and filter out invalid arrows
     const screensData = screens.map((screen) => ({
       id: screen.id,
       position: {
@@ -35,19 +38,40 @@ export async function GET() {
         y: screen.positionY,
       },
       selectedPromptIndex: screen.selectedPromptIndex,
-      conversationPoints: screen.dialogEntries.map((entry) => ({
-        id: entry.id,
-        prompt: entry.prompt,
-        html: entry.html || "",
-        title: entry.title,
-        timestamp: Number(entry.timestamp),
-        arrows:
+      conversationPoints: screen.dialogEntries.map((entry) => {
+        const arrows =
           (entry.arrows as Array<{
             touchableId: string;
             targetScreenId: string;
             startPoint?: { x: number; y: number };
-          }>) || [],
-      })),
+          }>) || [];
+        // Filter out arrows without valid targetScreenId
+        const validArrows = arrows.filter(
+          (arrow) => arrow.targetScreenId && screenIds.has(arrow.targetScreenId),
+        );
+
+        // If there are invalid arrows, update the database
+        if (validArrows.length !== arrows.length) {
+          // Update database asynchronously (don't await to avoid blocking response)
+          prisma.dialogEntry
+            .update({
+              where: { id: entry.id },
+              data: { arrows: validArrows },
+            })
+            .catch((error) => {
+              console.error(`Error cleaning up invalid arrows for dialog entry ${entry.id}:`, error);
+            });
+        }
+
+        return {
+          id: entry.id,
+          prompt: entry.prompt,
+          html: entry.html || "",
+          title: entry.title,
+          timestamp: Number(entry.timestamp),
+          arrows: validArrows,
+        };
+      }),
     }));
 
     return NextResponse.json(screensData);
