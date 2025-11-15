@@ -28,14 +28,17 @@ interface ViewportProps {
   onTransformChange?: (transform: ViewportTransform) => void;
   disabled?: boolean; // When true, panning is disabled (e.g., when dragging a screen)
   onContextMenu?: (e: React.MouseEvent) => void;
+  workspaceId?: string; // Workspace ID for workspace-specific viewport transform
 }
 
 const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
-  { children, onPanStart, onPanEnd, onTransformChange, disabled = false, onContextMenu },
+  { children, onPanStart, onPanEnd, onTransformChange, disabled = false, onContextMenu, workspaceId },
   ref,
 ) {
+  // Use workspace-specific key for viewport transform
+  const transformKey = workspaceId ? `viewportTransform-${workspaceId}` : "viewportTransform";
   const [viewportTransform, setViewportTransform, hasLoaded] =
-    usePersistentState<ViewportTransform>("viewportTransform", { x: 0, y: 0, scale: 1 }, 500);
+    usePersistentState<ViewportTransform>(transformKey, { x: 0, y: 0, scale: 1 }, 500);
   const viewportTransformRef = useRef<ViewportTransform>({ x: 0, y: 0, scale: 1 });
   const viewportRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
@@ -199,14 +202,16 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
   }, [handleWheel, viewportRef]);
 
   // Initialize viewport transform on mount if no saved value exists
+  // Also reload when workspaceId changes
   useEffect(() => {
-    if (!hasLoaded || !isInitialMount.current) return;
+    if (!hasLoaded) return;
     if (typeof window === "undefined") return;
 
-    // Check if localStorage has a saved value
-    const hasSavedValue = localStorage.getItem("viewportTransform") !== null;
+    // Check if localStorage has a saved value for this workspace
+    const transformKey = workspaceId ? `viewportTransform-${workspaceId}` : "viewportTransform";
+    const hasSavedValue = localStorage.getItem(transformKey) !== null;
 
-    if (!hasSavedValue) {
+    if (!hasSavedValue && isInitialMount.current) {
       // Center viewport when there are no screens and no saved transform (first time)
       // Center at 0,0 in content coordinates means viewport should be at center of screen
       requestAnimationFrame(() => {
@@ -222,13 +227,15 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
           onTransformChange?.(initialTransform);
         }
       });
-    } else {
+    } else if (hasLoaded) {
       // Update ref with loaded transform (from hook)
       viewportTransformRef.current = viewportTransform;
-      onTransformChange?.(viewportTransform);
+      if (!isInitialMount.current) {
+        onTransformChange?.(viewportTransform);
+      }
     }
     isInitialMount.current = false;
-  }, [hasLoaded, viewportRef, onTransformChange, viewportTransform, setViewportTransform]);
+  }, [hasLoaded, workspaceId, viewportRef, onTransformChange, viewportTransform, setViewportTransform]);
 
   // Keep ref in sync with state (safety measure)
   useEffect(() => {
@@ -249,7 +256,7 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
   return (
     <div
       ref={viewportRef}
-      className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-sky-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-950 dark:to-neutral-900"
+      className="relative h-screen w-screen overflow-hidden bg-white dark:bg-slate-900"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

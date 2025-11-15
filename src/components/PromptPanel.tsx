@@ -7,14 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import DeleteConfirmationDialog from "@/components/DeleteConfirmationDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -227,27 +220,13 @@ ${html}`;
         })}
 
         {/* Confirmation popup */}
-        <Dialog
+        <DeleteConfirmationDialog
           open={confirmDeleteIndex !== null}
           onOpenChange={(open) => !open && handleCancelDelete()}
-        >
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Are you sure?</DialogTitle>
-              <DialogDescription>
-                This action cannot be undone. This will permanently delete this conversation point.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={handleCancelDelete}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleConfirmDelete}>
-                Delete
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onConfirm={handleConfirmDelete}
+          onCancel={handleCancelDelete}
+          description="This action cannot be undone. This will permanently delete this conversation point."
+        />
 
         {/* Modify button or edit form */}
         {isEditing ? (

@@ -50,6 +50,13 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 📏 **Dynamic Height Tracking**: Screen heights are tracked and used for accurate arrow boundary detection, supporting screens taller than the minimum 844px
 - ⏳ **Loading States**: Create button and pending arrow button show spinners and are disabled during screen creation/cloning to prevent double submissions
 - 🖱️ **Dialog Dismissal**: Clicking on the viewport dismisses the new screen dialog and popup, unselects the current screen, and removes pending arrows
+- 📁 **Multi-File Workspaces**: Create and manage multiple workspaces to organize different projects or design iterations
+- 🏷️ **Editable Workspace Names**: Click on the workspace name in the header to edit it in-place (Enter to save, Escape to cancel)
+- 📋 **Workspace Selection Screen**: Access all your workspaces from the `/files` page with a grid layout showing workspace name, screen count, and creation date
+- ➕ **Create New Workspaces**: Create new workspaces with auto-generated names (e.g., "Workspace 1", "Workspace 2") or custom names
+- 🗑️ **Delete Workspaces**: Delete any workspace including all its screens with a confirmation dialog
+- 🔄 **Workspace-Specific State**: Each workspace maintains its own screens and viewport transform (pan/zoom) state
+- ⬅️ **Navigation**: Arrow left icon in workspace header navigates back to the files page
 
 ## User Stories
 
@@ -149,6 +156,19 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want** my prompt to be automatically saved if I try to create/modify a screen without being authenticated, **so that** I don't lose my work
 - **As a** user, **I want** the system to automatically restore my prompt and continue generation after I authenticate, **so that** I don't have to re-enter my request
 
+### Workspace Management
+
+- **As a** user, **I want to** create multiple workspaces, **so that** I can organize different projects or design iterations separately
+- **As a** user, **I want to** see all my workspaces in a grid layout, **so that** I can easily browse and select the one I want to work on
+- **As a** user, **I want to** see workspace information (name, screen count, creation date) for each workspace, **so that** I can identify them easily
+- **As a** user, **I want to** edit workspace names in-place by clicking on them, **so that** I can quickly rename workspaces
+- **As a** user, **I want to** delete workspaces I no longer need, **so that** I can keep my workspace list clean
+- **As a** user, **I want** a confirmation dialog before deleting a workspace, **so that** I don't accidentally lose all my screens
+- **As a** user, **I want** each workspace to maintain its own viewport state (pan/zoom), **so that** I can work on different projects with different camera positions
+- **As a** user, **I want** the root path to redirect to the workspace selection screen, **so that** I can choose which workspace to open
+- **As a** user, **I want** new workspaces to have auto-generated names if I don't provide one, **so that** I can quickly create workspaces without naming them
+- **As a** user, **I want** to see a delete icon when hovering over a workspace card, **so that** I can easily delete workspaces without cluttering the interface
+
 ### Technical Requirements
 
 - **As a** developer, **I want** generated HTML to be automatically cleaned of markdown code blocks, **so that** the HTML renders correctly in the iframe
@@ -197,6 +217,10 @@ ui-gen/
 │   │   │   ├── auth/
 │   │   │   │   └── [...nextauth]/
 │   │   │   │       └── route.ts     # Auth.js API route handlers
+│   │   │   ├── workspaces/
+│   │   │   │   ├── route.ts         # GET, POST /api/workspaces
+│   │   │   │   └── [id]/
+│   │   │   │       └── route.ts     # GET, PUT, DELETE /api/workspaces/:id
 │   │   │   ├── screens/
 │   │   │   │   ├── route.ts         # GET, POST /api/screens
 │   │   │   │   └── [id]/
@@ -210,11 +234,19 @@ ui-gen/
 │   │   │   └── create/
 │   │   │       └── route.ts          # API endpoint for UI generation (deprecated)
 │   │   ├── layout.tsx                # Root layout with SessionProvider
-│   │   ├── page.tsx                  # Home page (viewport management)
+│   │   ├── page.tsx                  # Root page (redirects to /files)
+│   │   ├── files/
+│   │   │   └── page.tsx              # Workspace selection page
+│   │   ├── ws/
+│   │   │   └── [id]/
+│   │   │       └── page.tsx          # Workspace page (viewport management)
 │   │   └── globals.css               # Global styles
 │   ├── components/
 │   │   ├── Screen.tsx                 # Individual screen component with iframe
 │   │   ├── PromptPanel.tsx            # History panel and modification interface
+│   │   ├── WorkspaceHeader.tsx        # Workspace header with editable title and navigation
+│   │   ├── EditableTitle.tsx          # Reusable editable title component
+│   │   ├── DeleteConfirmationDialog.tsx # Reusable delete confirmation dialog
 │   │   ├── UserAvatar.tsx             # User avatar and authentication UI
 │   │   ├── Providers.tsx              # SessionProvider wrapper
 │   │   └── Contents.tsx              # Legacy component (example UI)
@@ -360,16 +392,26 @@ yarn dev
 3. After authentication, automatically restore your prompt and continue the generation process
 4. You won't lose your work - the screen will be created/modified seamlessly after you authenticate
 
+### Workspace Management
+
+1. **Access Workspaces**: When you first visit the app, you'll be redirected to the `/files` page showing all your workspaces
+2. **Create Workspace**: Click the "Create New Workspace" card (with plus icon) to create a new workspace with an auto-generated name
+3. **Select Workspace**: Click on any workspace card to open it and start working
+4. **Edit Workspace Name**: In a workspace, click on the workspace name in the top-left header to edit it in-place (Enter to save, Escape to cancel)
+5. **Delete Workspace**: Hover over a workspace card to reveal the delete icon, then click it and confirm deletion
+6. **Navigate Back**: Click the arrow left icon in the workspace header to return to the files page
+
 ### Initial Generation
 
-1. When the viewport is empty, right-click anywhere on the empty space
-2. A small popup will appear with "Create screen" title and a "Mobile app" button
-3. Click the "Mobile app" button to open the prompt dialog
-4. Enter a description of the UI you want to generate
-5. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
-6. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
-7. The generated UI will be displayed in a 390px × 844px screen container
-8. The screen will be created at the location where you right-clicked
+1. Open a workspace from the files page
+2. When the viewport is empty, right-click anywhere on the empty space
+3. A small popup will appear with "Create screen" title and a "Mobile app" button
+4. Click the "Mobile app" button to open the prompt dialog
+5. Enter a description of the UI you want to generate
+6. Press `Ctrl+Enter` (or `Cmd+Enter` on Mac) or click the "Create" button with the magic icon
+7. Wait for the AI to generate the UI (a loading spinner will appear over the screen)
+8. The generated UI will be displayed in a 390px × 844px screen container
+9. The screen will be created at the location where you right-clicked
 
 ### Creating New Screens
 
@@ -524,22 +566,31 @@ Generated UIs include accessibility best practices:
 
 All endpoints require authentication (OAuth user session).
 
+**Workspaces:**
+
+- `GET /api/workspaces` - List all workspaces for the authenticated user
+- `POST /api/workspaces` - Create a new workspace (optional `name` parameter, auto-generates if not provided)
+- `GET /api/workspaces/:id` - Get a specific workspace by ID
+- `PUT /api/workspaces/:id` - Update workspace name
+- `DELETE /api/workspaces/:id` - Delete workspace and all associated screens (cascade delete)
+
 **Screens:**
 
-- `GET /api/screens` - List all screens for the authenticated user's workspace
-- `POST /api/screens` - Create a new screen (requires `x`, `y` coordinates)
-- `PUT /api/screens/:id` - Update screen (partial data: `x`, `y`, `selectedPromptIndex`)
-- `DELETE /api/screens/:id` - Delete screen and all associated dialog entries (cascade delete)
+- `GET /api/screens?workspaceId=:id` - List all screens for a specific workspace (workspaceId query parameter required)
+- `POST /api/screens` - Create a new screen (requires `workspaceId`, `x`, `y` coordinates)
+- `PUT /api/screens/:id?workspaceId=:id` - Update screen (partial data: `x`, `y`, `selectedPromptIndex`, requires workspaceId query parameter)
+- `DELETE /api/screens/:id?workspaceId=:id` - Delete screen and all associated dialog entries (cascade delete, requires workspaceId query parameter)
 
 **Dialog Entries:**
 
-- `GET /api/screens/:id/dialog` - List all dialog entries for a screen
-- `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically)
-- `DELETE /api/screens/:id/dialog/:dialogId` - Delete dialog entry
+- `GET /api/screens/:id/dialog?workspaceId=:id` - List all dialog entries for a screen (requires workspaceId query parameter)
+- `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically, workspaceId in body or query)
+- `PUT /api/screens/:id/dialog/:dialogId?workspaceId=:id` - Update dialog entry arrows (requires workspaceId query parameter)
+- `DELETE /api/screens/:id/dialog/:dialogId?workspaceId=:id` - Delete dialog entry (requires workspaceId query parameter)
 
 **Screen Cloning:**
 
-- `POST /api/screens/:id/clone` - Clone a screen up to a specific conversation point (requires `convPointId`, `x`, `y` coordinates)
+- `POST /api/screens/:id/clone?workspaceId=:id` - Clone a screen up to a specific conversation point (requires `convPointId`, `x`, `y` coordinates, workspaceId query parameter)
   - Creates a new screen with all dialog entries up to and including the specified conversation point
   - Preserves conversation history and HTML content
   - Sets `selectedPromptIndex` to the cloned conversation point
@@ -550,8 +601,11 @@ All endpoints require authentication (OAuth user session).
 
 #### Database Schema
 
-- **Workspace**: Each user has a default workspace (identified by email hash + name 'default')
-- **Screen**: Contains position, selectedPromptIndex, and references to dialog entries
+- **Workspace**: Each user can have multiple workspaces (identified by email hash + workspace name, no unique constraint on name)
+  - Workspaces are identified by UUID in the database
+  - Each workspace maintains its own set of screens
+  - Workspace names can be edited and are not required to be unique
+- **Screen**: Contains position, selectedPromptIndex, workspaceId reference, and references to dialog entries
 - **DialogEntry**: Contains prompt, generated HTML, title, timestamp, and arrows (JSON field storing arrow connections)
 
 #### UI Generation
@@ -574,10 +628,14 @@ All endpoints require authentication (OAuth user session).
   - Callbacks to include user ID, name, email, and image in session
 - **User Identification**: Uses email hash (SHA-256) as userId for privacy
   - Email is hashed before storing in database
-  - Each user automatically gets a default workspace
 - **Workspace Management**: `src/lib/auth.ts`
   - `getAuthenticatedUser()` - Gets authenticated user from session
-  - `getOrCreateWorkspace()` - Auto-creates workspace if user doesn't have one
+  - `getWorkspaceById()` - Gets a specific workspace by ID and verifies ownership
+  - `getOrCreateWorkspace()` - Gets the default workspace (throws error if it doesn't exist, no auto-creation)
+- **Workspace Routes**: 
+  - `/files` - Workspace selection page showing all user workspaces in a grid (page title: "Workspaces - UI Generator")
+  - `/ws/:id` - Individual workspace page with viewport and screens (page title: "{workspace name} - UI Generator")
+  - `/` - Redirects to `/files` for workspace selection
 - **UserAvatar Component**: `src/components/UserAvatar.tsx`
   - Fixed position in top-right corner (not affected by viewport transforms)
   - Shows default icon when not authenticated

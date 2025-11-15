@@ -4,6 +4,7 @@ export const createScreenSchema = z.object({
   x: z.number(),
   y: z.number(),
   selectedPromptIndex: z.number().int().nullable().optional(),
+  workspaceId: z.string().optional(),
 });
 
 export const updateScreenSchema = z.object({

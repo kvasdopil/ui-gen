@@ -69,15 +69,20 @@ This file contains important technical notes, decisions, and gotchas for future 
   - **Database**: Neon PostgreSQL with Prisma ORM
   - **Schema**: Workspace → Screen → DialogEntry (one-to-many relationships)
   - **User Identification**: Email hash (SHA-256) used as userId for privacy
-  - **Workspace**: Each user has a default workspace (email hash + name 'default')
+  - **Workspace**: Users can have multiple workspaces (identified by UUID, no unique constraint on name)
+    - Workspaces are identified by UUID in the database and URL (`/ws/:id`)
+    - Workspace names can be edited and are not required to be unique
+    - Each workspace maintains its own set of screens
+    - Viewport transforms are stored per workspace in localStorage with key `viewportTransform-${workspaceId}`
   - **Storage abstraction**: `ApiStorage` class in `src/lib/storage.ts` implements Storage interface
-  - **API-based**: Screens and dialog entries saved via REST API endpoints
-  - **IndexedDB**: Still used for viewport transform and pending prompts (client-side state)
+  - **API-based**: Screens and dialog entries saved via REST API endpoints (all require workspaceId)
+  - **IndexedDB**: Still used for pending prompts (client-side state)
+  - **localStorage**: Used for workspace-specific viewport transforms
   - Auto-save screens to API on changes (debounced by 300ms)
-  - Auto-save viewport transform with 500ms debounce
-  - Auto-load screens from API on mount
+  - Auto-save viewport transform with 500ms debounce (workspace-specific)
+  - Auto-load screens from API on mount (workspace-specific)
   - Database migrations managed via Prisma
-- **Location**: `prisma/schema.prisma`, `src/lib/storage.ts`, `src/lib/prisma.ts`, `src/app/api/screens/`
+- **Location**: `prisma/schema.prisma`, `src/lib/storage.ts`, `src/lib/prisma.ts`, `src/app/api/screens/`, `src/app/api/workspaces/`
 
 ### 8. Data Structure
 
@@ -135,15 +140,17 @@ This file contains important technical notes, decisions, and gotchas for future 
 
 ### 11. Camera Position Persistence
 
-- **Decision**: Persist viewport transform (position and zoom) to IndexedDB
-- **Reason**: Users expect to continue from where they left off when reloading the page
+- **Decision**: Persist viewport transform (position and zoom) to localStorage per workspace
+- **Reason**: Users expect to continue from where they left off when reloading the page, and each workspace should maintain its own viewport state
 - **Implementation**:
   - Added `ViewportTransform` type with `x`, `y`, `scale` properties
-  - Added `viewportTransform` object store to IndexedDB schema
+  - Viewport transforms stored in localStorage with workspace-specific keys: `viewportTransform-${workspaceId}`
+  - Default key `viewportTransform` used when no workspaceId is provided (backward compatibility)
   - Save viewport transform with 500ms debounce to avoid excessive writes during panning/zooming
-  - Load viewport transform on mount alongside screens
+  - Load viewport transform on mount alongside screens (workspace-specific)
   - Track `isLoadingViewport` state to prevent saving during initial load
-- **Location**: `src/lib/storage.ts`, `src/app/page.tsx`
+  - Viewport transform reloads when workspaceId changes
+- **Location**: `src/lib/storage.ts`, `src/app/ws/[id]/page.tsx`, `src/components/Viewport.tsx`
 
 ### 12. Conversation Point Management
 
@@ -364,13 +371,20 @@ This file contains important technical notes, decisions, and gotchas for future 
 
 ### API Routes
 
+- **Workspaces**: `src/app/api/workspaces/route.ts` and `src/app/api/workspaces/[id]/route.ts`
+  - GET `/api/workspaces`: List all workspaces for authenticated user (includes screen count)
+  - POST `/api/workspaces`: Create new workspace (optional name, auto-generates if not provided)
+  - GET `/api/workspaces/:id`: Get specific workspace by ID
+  - PUT `/api/workspaces/:id`: Update workspace name
+  - DELETE `/api/workspaces/:id`: Delete workspace and all screens (cascade delete)
+  - All endpoints require authentication and verify workspace ownership
+
 - **Screens**: `src/app/api/screens/route.ts` and `src/app/api/screens/[id]/route.ts`
-  - GET: List all screens for user's workspace
-  - POST: Create new screen (requires x, y coordinates)
-  - PUT: Update screen (partial data: x, y, selectedPromptIndex)
-  - DELETE: Delete screen and all dialog entries
-  - All endpoints require authentication
-  - Auto-creates workspace if user doesn't have one
+  - GET: List all screens for a specific workspace (requires workspaceId query parameter)
+  - POST: Create new screen (requires workspaceId, x, y coordinates)
+  - PUT: Update screen (partial data: x, y, selectedPromptIndex, requires workspaceId query parameter)
+  - DELETE: Delete screen and all dialog entries (requires workspaceId query parameter)
+  - All endpoints require authentication and verify workspace ownership via `getWorkspaceById()`
 
 - **Dialog Entries**: `src/app/api/screens/[id]/dialog/route.ts` and `src/app/api/screens/[id]/dialog/[dialogId]/route.ts`
   - GET: List all dialog entries for a screen (includes arrows)
@@ -419,7 +433,8 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **File**: `src/lib/auth.ts`
 - **Key Functions**:
   - `getAuthenticatedUser()` - Gets authenticated user from session (requires email)
-  - `getOrCreateWorkspace()` - Auto-creates workspace if user doesn't have one
+  - `getWorkspaceById()` - Gets a specific workspace by ID and verifies it belongs to the authenticated user
+  - `getOrCreateWorkspace()` - Gets the default workspace (throws error if it doesn't exist, no auto-creation)
   - `hashEmail()` - Creates SHA-256 hash of email for use as userId
   - Uses email hash for privacy (emails not stored in plain text)
 
@@ -429,25 +444,26 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Key Features**:
   - `Storage` interface with `saveScreens`, `saveScreen`, `loadScreens`, `clearScreens`, `deleteScreen`, `deleteDialogEntry`, `updateDialogEntryArrows`, `saveViewportTransform`, `loadViewportTransform`, `savePendingPrompt`, `loadPendingPrompt`, `clearPendingPrompt` methods
   - `ApiStorage` class implementing API-based storage for screens
-  - Uses REST API endpoints for screens and dialog entries
-  - Uses IndexedDB for client-side state (viewport transform, pending prompts)
+  - Uses REST API endpoints for screens and dialog entries (all require workspaceId)
+  - Uses IndexedDB for client-side state (pending prompts)
+  - Uses localStorage for workspace-specific viewport transforms
   - Database name: `ui-gen-db`, version: 3
   - Object stores:
-    - `viewportTransform` with key `"current"` storing ViewportTransform
     - `pendingPrompt` with key `"current"` storing `{ prompt: string, screenId: string | null, position: { x: number, y: number } | null }`
+  - Viewport transforms stored in localStorage with workspace-specific keys: `viewportTransform-${workspaceId}` (or `viewportTransform` for default)
   - Auto-saves screens to API whenever they change (debounced by 300ms)
   - **Optimized Screen Saving**: `saveScreen(screen)` method saves only a single screen, while `saveScreens(screens)` saves all screens
     - `page.tsx` tracks which screen was updated via `lastUpdatedScreenIdRef` when position or selectedPromptIndex changes
     - Only the specific updated screen is saved, not all screens - prevents unnecessary API calls when moving screens
     - Uses `hasCompletedInitialLoadRef` to prevent saving during initial page load
-  - Auto-saves viewport transform with 500ms debounce
-  - Auto-loads screens from API on mount
+  - Auto-saves viewport transform with 500ms debounce (workspace-specific)
+  - Auto-loads screens from API on mount (workspace-specific via workspaceId parameter)
   - Pending prompts are saved when auth is required and loaded after authentication
   - **Deletion Methods**:
-    - `deleteScreen(screenId)`: Calls `DELETE /api/screens/:id` to delete screen and all dialog entries (cascade delete)
-    - `deleteDialogEntry(screenId, dialogId)`: Calls `DELETE /api/screens/:id/dialog/:dialogId` to delete a single dialog entry
+    - `deleteScreen(screenId)`: Calls `DELETE /api/screens/:id?workspaceId=:id` to delete screen and all dialog entries (cascade delete)
+    - `deleteDialogEntry(screenId, dialogId)`: Calls `DELETE /api/screens/:id/dialog/:dialogId?workspaceId=:id` to delete a single dialog entry
   - **Arrow Persistence**:
-    - `updateDialogEntryArrows(screenId, dialogId, arrows)`: Calls `PUT /api/screens/:id/dialog/:dialogId` to update arrows for a dialog entry
+    - `updateDialogEntryArrows(screenId, dialogId, arrows)`: Calls `PUT /api/screens/:id/dialog/:dialogId?workspaceId=:id` to update arrows for a dialog entry
     - Arrows are stored as JSON in the database `DialogEntry.arrows` field
     - Only persisted when arrow is completed (released over a screen) or removed - no updates while dragging
 
@@ -470,8 +486,11 @@ This file contains important technical notes, decisions, and gotchas for future 
   - `ViewportTransform`: `{ x: number, y: number, scale: number }` - Camera position and zoom level
 - **File**: `prisma/schema.prisma`
 - **Database Models**:
-  - `Workspace`: `{ id: uuid, userId: string (email hash), name: string (default: 'default'), createdAt, updatedAt }`
+  - `Workspace`: `{ id: uuid, userId: string (email hash), name: string, createdAt, updatedAt }`
+    - No unique constraint on name (workspace names can collide)
+    - Identified by UUID in database and URL
   - `Screen`: `{ id: uuid, workspaceId: uuid, positionX: float, positionY: float, selectedPromptIndex: int?, createdAt, updatedAt }`
+    - References workspace via `workspaceId` foreign key
   - `DialogEntry`: `{ id: uuid, screenId: uuid, prompt: string, html: string?, title: string?, arrows: json?, timestamp: bigint, createdAt, updatedAt }`
     - `arrows` field stores array of `ConversationPointArrow` objects as JSON
     - Each arrow contains `touchableId` (aria-roledescription value) instead of overlay index for stable identification
@@ -565,13 +584,17 @@ This file contains important technical notes, decisions, and gotchas for future 
 - Viewport transform (camera position and zoom) is auto-saved to IndexedDB with 500ms debounce, auto-loaded on mount
 - Database: Neon PostgreSQL with Prisma ORM (see `prisma/schema.prisma`)
 - User identification: Email hash (SHA-256) used as userId for privacy (see `src/lib/auth.ts` - `hashEmail()` function)
-- Workspace: Each user has a default workspace (email hash + name 'default')
-- Screen creation: Two-step process - create screen first via `POST /api/screens`, then create first dialog entry via `POST /api/screens/:id/dialog`
+- Workspace: Users can have multiple workspaces (identified by UUID, no unique constraint on name)
+  - Workspaces are accessed via `/ws/:id` route where `:id` is the workspace UUID
+  - Root path `/` redirects to `/files` for workspace selection
+  - Each workspace maintains its own screens and viewport transform state
+- Screen creation: Two-step process - create screen first via `POST /api/screens` (requires workspaceId), then create first dialog entry via `POST /api/screens/:id/dialog`
 - Dialog entries: Immutable once created (no update endpoint, only DELETE) - except arrows can be updated via PUT
 - API endpoints: RESTful design with separate endpoints for screens and dialog entries (see `src/app/api/screens/`)
 - Validation: Zod schemas used for all API request validation (see `src/lib/validations.ts`)
 - All API endpoints require authentication - use `getAuthenticatedUser()` from `src/lib/auth.ts`
-- Workspace auto-creation: Use `getOrCreateWorkspace()` from `src/lib/auth.ts` to get or create user's workspace
+- Workspace management: Use `getWorkspaceById()` from `src/lib/auth.ts` to verify workspace ownership
+- All screen/dialog endpoints require `workspaceId` query parameter or in request body
 - Deprecated endpoint: `/api/create` is deprecated but kept for backward compatibility
 
 ### State Management
@@ -619,3 +642,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Opens the same confirmation dialog as clicking the delete button in the menu
   - Location: `src/components/Screen.tsx` (keyboard handler), `src/components/PromptPanel.tsx` (ref interface)
 - Toast notifications: Custom toast system in `src/components/ui/toast.tsx` - uses `isMounted` state to prevent hydration mismatches (returns `null` during SSR, only renders after client-side hydration completes)
+- Page titles: Dynamic page titles set via `document.title` in `useEffect` hooks
+  - Files page (`/files`): "Workspaces - UI Generator"
+  - Workspace page (`/ws/:id`): "{workspace name} - UI Generator" (updates when workspace name changes, shows "Untitled workspace" if name is empty)
+  - Location: `src/app/files/page.tsx`, `src/app/ws/[id]/page.tsx`

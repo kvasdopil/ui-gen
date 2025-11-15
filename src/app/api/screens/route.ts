@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
+import { getAuthenticatedUser, getWorkspaceById } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createScreenSchema } from "@/lib/validations";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser();
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
+
+    // Get workspaceId from query param (required)
+    const { searchParams } = new URL(request.url);
+    const workspaceId = searchParams.get("workspaceId");
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
+
+    const workspace = await getWorkspaceById(user.email, workspaceId);
 
     const screens = await prisma.screen.findMany({
       where: {
@@ -91,10 +100,18 @@ export async function POST(request: NextRequest) {
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
 
     const body = await request.json();
     const validatedData = createScreenSchema.parse(body);
+
+    // Get workspaceId from body or query param (required)
+    const workspaceId = validatedData.workspaceId || new URL(request.url).searchParams.get("workspaceId");
+
+    if (!workspaceId) {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
+    }
+
+    const workspace = await getWorkspaceById(user.email, workspaceId);
 
     // Create screen without dialog entries
     const screen = await prisma.screen.create({

@@ -25,7 +25,7 @@ interface UIDatabase extends DBSchema {
 export interface Storage {
   saveScreens(screens: ScreenData[]): Promise<void>;
   saveScreen(screen: ScreenData): Promise<void>;
-  loadScreens(): Promise<ScreenData[]>;
+  loadScreens(workspaceId?: string): Promise<ScreenData[]>;
   clearScreens(): Promise<void>;
   deleteScreen(screenId: string): Promise<void>;
   deleteDialogEntry(screenId: string, dialogId: string): Promise<void>;
@@ -38,8 +38,8 @@ export interface Storage {
       startPoint?: { x: number; y: number };
     }>,
   ): Promise<void>;
-  saveViewportTransform(transform: ViewportTransform): Promise<void>;
-  loadViewportTransform(): Promise<ViewportTransform | null>;
+  saveViewportTransform(transform: ViewportTransform, workspaceId?: string): Promise<void>;
+  loadViewportTransform(workspaceId?: string): Promise<ViewportTransform | null>;
   savePendingPrompt(
     prompt: string,
     screenId: string | null,
@@ -128,9 +128,12 @@ class ApiStorage implements Storage {
     }
   }
 
-  async loadScreens(): Promise<ScreenData[]> {
+  async loadScreens(workspaceId?: string): Promise<ScreenData[]> {
     try {
-      const response = await fetch("/api/screens");
+      const url = workspaceId
+        ? `/api/screens?workspaceId=${encodeURIComponent(workspaceId)}`
+        : "/api/screens";
+      const response = await fetch(url);
       if (!response.ok) {
         if (response.status === 401) {
           // Not authenticated, return empty array
@@ -217,23 +220,28 @@ class ApiStorage implements Storage {
     }
   }
 
-  async saveViewportTransform(transform: ViewportTransform): Promise<void> {
+  async saveViewportTransform(transform: ViewportTransform, workspaceId?: string): Promise<void> {
     try {
-      const db = await this.getDB();
-      await db.put("viewportTransform", transform, "current");
+      // Use workspace-specific key if workspaceId is provided, otherwise use default
+      const key = workspaceId ? `viewportTransform-${workspaceId}` : "viewportTransform";
+      if (typeof window === "undefined") return;
+      localStorage.setItem(key, JSON.stringify(transform));
     } catch (error) {
-      console.error("Error saving viewport transform to IndexedDB:", error);
+      console.error("Error saving viewport transform to localStorage:", error);
       throw error;
     }
   }
 
-  async loadViewportTransform(): Promise<ViewportTransform | null> {
+  async loadViewportTransform(workspaceId?: string): Promise<ViewportTransform | null> {
     try {
-      const db = await this.getDB();
-      const transform = await db.get("viewportTransform", "current");
-      return transform || null;
+      // Use workspace-specific key if workspaceId is provided, otherwise use default
+      const key = workspaceId ? `viewportTransform-${workspaceId}` : "viewportTransform";
+      if (typeof window === "undefined") return null;
+      const stored = localStorage.getItem(key);
+      if (!stored) return null;
+      return JSON.parse(stored) as ViewportTransform;
     } catch (error) {
-      console.error("Error loading viewport transform from IndexedDB:", error);
+      console.error("Error loading viewport transform from localStorage:", error);
       return null;
     }
   }
