@@ -1,0 +1,18 @@
+- generate from image
+- export workspace as a zip file with html pages
+- 'interact' mode, when ui mimicks the real app
+- always show (+) outlines for unassigned <a> elements
+- try grok, gpt-5.1-mini
+- generate workspace name on magic btn click, auto generate after 1st screen
+- global project description, generate it with a magic btn
+- auto create links after new page is created
+  - separate ai step, provide list of screens
+  - only show links for currently selected screen
+- better routing for links, links should be grouped nicely
+- track parent/child relationships when creating a screen via link
+- cascading updates for linked screens
+- create 'screen variants' with cascading updates, so changing a parent screen changes all children too
+- how to make modifications in parent screen and propagate them to children, without generating completely new design
+- generate urls for screens
+- mcp
+- builtin chat for bulk updates, analysis, etc.
