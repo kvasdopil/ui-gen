@@ -912,14 +912,17 @@ export default function WorkspacePage() {
 
     try {
       // Step 1: Create screen via API (without prompt)
-      const screenResponse = await fetch(`/api/screens?workspaceId=${encodeURIComponent(workspaceId)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          x: contentX,
-          y: contentY,
-        }),
-      });
+      const screenResponse = await fetch(
+        `/api/screens?workspaceId=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            x: contentX,
+            y: contentY,
+          }),
+        },
+      );
 
       if (!screenResponse.ok) {
         if (screenResponse.status === 401) {
@@ -1221,7 +1224,7 @@ export default function WorkspacePage() {
 
   if (isLoadingWorkspace) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="text-gray-500">Loading...</div>
       </div>
     );
@@ -1230,10 +1233,7 @@ export default function WorkspacePage() {
   return (
     <>
       <UserAvatar />
-      <WorkspaceHeader
-        workspaceName={workspaceName}
-        onNameUpdate={handleWorkspaceNameUpdate}
-      />
+      <WorkspaceHeader workspaceName={workspaceName} onNameUpdate={handleWorkspaceNameUpdate} />
       <Viewport
         ref={viewportHandleRef}
         disabled={!!draggedScreenId || !!arrowLine}

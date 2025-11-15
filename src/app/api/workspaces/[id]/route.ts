@@ -8,10 +8,7 @@ const updateWorkspaceSchema = z.object({
   name: z.string().min(1, "Name is required"),
 });
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser();
     if (!user.email) {
@@ -19,7 +16,10 @@ export async function GET(
     }
 
     const { id } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Get workspace
     const workspace = await prisma.workspace.findFirst({
@@ -54,10 +54,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getAuthenticatedUser();
     if (!user.email) {
@@ -65,7 +62,10 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Verify workspace belongs to user
     const workspace = await prisma.workspace.findFirst({
@@ -115,7 +115,10 @@ export async function DELETE(
     }
 
     const { id } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Verify workspace belongs to user
     const workspace = await prisma.workspace.findFirst({
@@ -141,4 +144,3 @@ export async function DELETE(
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

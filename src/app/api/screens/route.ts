@@ -105,7 +105,8 @@ export async function POST(request: NextRequest) {
     const validatedData = createScreenSchema.parse(body);
 
     // Get workspaceId from body or query param (required)
-    const workspaceId = validatedData.workspaceId || new URL(request.url).searchParams.get("workspaceId");
+    const workspaceId =
+      validatedData.workspaceId || new URL(request.url).searchParams.get("workspaceId");
 
     if (!workspaceId) {
       return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });

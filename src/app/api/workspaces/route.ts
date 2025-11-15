@@ -16,7 +16,10 @@ export async function GET() {
     }
 
     // Get user ID
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Get all workspaces for this user
     const workspaces = await prisma.workspace.findMany({
@@ -60,7 +63,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user ID
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     const body = await request.json().catch(() => ({}));
     const validatedData = createWorkspaceSchema.parse(body);
@@ -114,4 +120,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

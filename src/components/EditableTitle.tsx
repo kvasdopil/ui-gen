@@ -78,20 +78,17 @@ export default function EditableTitle({
           onChange={(e) => setLocalEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleBlur}
-          className={`bg-transparent border-none outline-none focus:outline-none p-0 m-0 ${className}`}
+          className={`m-0 border-none bg-transparent p-0 outline-none focus:outline-none ${className}`}
           style={{ minWidth: "200px" }}
         />
       ) : (
         <button
           onClick={handleClick}
-          className={`text-left p-0 m-0 hover:opacity-80 transition-opacity cursor-text ${className}`}
+          className={`m-0 cursor-text p-0 text-left transition-opacity hover:opacity-80 ${className}`}
         >
-          <span className={isEmpty ? "text-gray-400 dark:text-gray-500" : ""}>
-            {displayValue}
-          </span>
+          <span className={isEmpty ? "text-gray-400 dark:text-gray-500" : ""}>{displayValue}</span>
         </button>
       )}
     </>
   );
 }
-

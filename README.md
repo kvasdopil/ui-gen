@@ -632,7 +632,7 @@ All endpoints require authentication (OAuth user session).
   - `getAuthenticatedUser()` - Gets authenticated user from session
   - `getWorkspaceById()` - Gets a specific workspace by ID and verifies ownership
   - `getOrCreateWorkspace()` - Gets the default workspace (throws error if it doesn't exist, no auto-creation)
-- **Workspace Routes**: 
+- **Workspace Routes**:
   - `/files` - Workspace selection page showing all user workspaces in a grid (page title: "Workspaces - UI Generator")
   - `/ws/:id` - Individual workspace page with viewport and screens (page title: "{workspace name} - UI Generator")
   - `/` - Redirects to `/files` for workspace selection

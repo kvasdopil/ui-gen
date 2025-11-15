@@ -32,7 +32,15 @@ interface ViewportProps {
 }
 
 const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
-  { children, onPanStart, onPanEnd, onTransformChange, disabled = false, onContextMenu, workspaceId },
+  {
+    children,
+    onPanStart,
+    onPanEnd,
+    onTransformChange,
+    disabled = false,
+    onContextMenu,
+    workspaceId,
+  },
   ref,
 ) {
   // Use workspace-specific key for viewport transform
@@ -235,7 +243,14 @@ const Viewport = forwardRef<ViewportHandle, ViewportProps>(function Viewport(
       }
     }
     isInitialMount.current = false;
-  }, [hasLoaded, workspaceId, viewportRef, onTransformChange, viewportTransform, setViewportTransform]);
+  }, [
+    hasLoaded,
+    workspaceId,
+    viewportRef,
+    onTransformChange,
+    viewportTransform,
+    setViewportTransform,
+  ]);
 
   // Keep ref in sync with state (safety measure)
   useEffect(() => {

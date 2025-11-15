@@ -9,15 +9,12 @@ interface WorkspaceHeaderProps {
   onNameUpdate: (name: string) => Promise<void>;
 }
 
-export default function WorkspaceHeader({
-  workspaceName,
-  onNameUpdate,
-}: WorkspaceHeaderProps) {
+export default function WorkspaceHeader({ workspaceName, onNameUpdate }: WorkspaceHeaderProps) {
   const router = useRouter();
 
   return (
     <div
-      className="fixed top-4 left-4 z-[9999] flex items-center gap-3 p-1 bg-white dark:bg-slate-900 rounded-md"
+      className="fixed top-4 left-4 z-[9999] flex items-center gap-3 rounded-md bg-white p-1 dark:bg-slate-900"
       onMouseDown={(e) => e.stopPropagation()}
       onMouseMove={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
@@ -26,13 +23,13 @@ export default function WorkspaceHeader({
       {/* Files icon */}
       <button
         onClick={() => router.push("/files")}
-        className="flex items-center justify-center w-10 h-10 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+        className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
         aria-label="Back to files"
         onMouseDown={(e) => e.stopPropagation()}
         onMouseMove={(e) => e.stopPropagation()}
         onMouseUp={(e) => e.stopPropagation()}
       >
-        <FaArrowLeft className="text-gray-700 dark:text-gray-300 h-5 w-5" />
+        <FaArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-300" />
       </button>
 
       {/* Workspace name */}
@@ -52,4 +49,3 @@ export default function WorkspaceHeader({
     </div>
   );
 }
-

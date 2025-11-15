@@ -118,7 +118,7 @@ export default function FilesPage() {
     const created = moment(createdAt);
     const now = moment();
     const diffMonths = now.diff(created, "months", true);
-    
+
     if (diffMonths < 1) {
       return created.fromNow();
     }
@@ -127,7 +127,7 @@ export default function FilesPage() {
 
   if (status === "loading" || isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center">
         <div className="text-gray-500">Loading...</div>
       </div>
     );
@@ -140,20 +140,20 @@ export default function FilesPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-slate-100 dark:from-slate-900 dark:via-slate-950 dark:to-neutral-900">
       <UserAvatar />
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
-        <h1 className="text-3xl font-bold mb-8">Workspaces</h1>
+      <div className="container mx-auto max-w-7xl px-4 py-8">
+        <h1 className="mb-8 text-3xl font-bold">Workspaces</h1>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {/* Create Workspace Card */}
           <div
-            className="bg-white dark:bg-slate-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-slate-600 p-4 hover:border-gray-400 dark:hover:border-slate-500 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[200px]"
+            className="flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white p-4 transition-colors hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-slate-500"
             onClick={handleCreateWorkspace}
           >
             {isCreating ? (
               <div className="text-gray-500 dark:text-gray-400">Creating...</div>
             ) : (
               <div className="flex flex-col items-center justify-center">
-                <FaPlus className="text-4xl text-gray-400 dark:text-gray-500 mb-2" />
+                <FaPlus className="mb-2 text-4xl text-gray-400 dark:text-gray-500" />
                 <span className="text-sm text-gray-500 dark:text-gray-400">Create Workspace</span>
               </div>
             )}
@@ -163,10 +163,10 @@ export default function FilesPage() {
           {workspaces.map((workspace) => (
             <div
               key={workspace.id}
-              className={`relative rounded-lg border p-4 hover:shadow-md transition-all cursor-pointer flex flex-col ${
+              className={`relative flex cursor-pointer flex-col rounded-lg border p-4 transition-all hover:shadow-md ${
                 hoveredDeleteId === workspace.id
-                  ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800"
-                  : "bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700"
+                  ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30"
+                  : "border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800"
               }`}
               onClick={() => handleWorkspaceClick(workspace.id)}
               onMouseEnter={() => setHoveredWorkspaceId(workspace.id)}
@@ -178,7 +178,7 @@ export default function FilesPage() {
               {/* Delete icon in top-right corner - only visible when workspace is hovered */}
               {hoveredWorkspaceId === workspace.id && (
                 <button
-                  className="absolute top-2 right-2 p-1.5 rounded-md text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-500 transition-colors z-10"
+                  className="absolute top-2 right-2 z-10 rounded-md p-1.5 text-gray-400 transition-colors hover:text-red-500 dark:text-gray-500 dark:hover:text-red-500"
                   onMouseEnter={() => setHoveredDeleteId(workspace.id)}
                   onMouseLeave={() => setHoveredDeleteId(null)}
                   disabled={deletingId === workspace.id}
@@ -189,22 +189,24 @@ export default function FilesPage() {
                   aria-label="Delete workspace"
                 >
                   {deletingId === workspace.id ? (
-                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
                   ) : (
-                    <MdDeleteOutline className="w-4 h-4" />
+                    <MdDeleteOutline className="h-4 w-4" />
                   )}
                 </button>
               )}
 
               <div className="flex-1">
-                <h2 className="text-lg font-semibold mb-2 pr-8">
+                <h2 className="mb-2 pr-8 text-lg font-semibold">
                   {workspace.name || "Untitled workspace"}
                 </h2>
-                <div className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <div>{workspace.screenCount} screen{workspace.screenCount !== 1 ? "s" : ""}</div>
+                <div className="space-y-1 text-sm text-gray-500 dark:text-gray-400">
+                  <div>
+                    {workspace.screenCount} screen{workspace.screenCount !== 1 ? "s" : ""}
+                  </div>
                   <div>Created {formatDate(workspace.createdAt)}</div>
                   {workspace.isDefault && (
-                    <span className="inline-block px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs">
+                    <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                       Default
                     </span>
                   )}
@@ -226,4 +228,3 @@ export default function FilesPage() {
     </div>
   );
 }
-
