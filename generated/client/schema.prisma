@@ -26,15 +26,15 @@ model Workspace {
 }
 
 model Screen {
-  id                 String       @id @default(uuid())
-  workspaceId        String
-  positionX          Float
-  positionY          Float
+  id                  String   @id @default(uuid())
+  workspaceId         String
+  positionX           Float
+  positionY           Float
   selectedPromptIndex Int?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   dialogEntries DialogEntry[]
 
   @@index([workspaceId])
@@ -46,7 +46,7 @@ model DialogEntry {
   prompt    String
   html      String?
   title     String?
-  arrows    Json?    // Array of ConversationPointArrow objects
+  arrows    Json? // Array of ConversationPointArrow objects
   timestamp BigInt
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

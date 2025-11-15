@@ -527,6 +527,24 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Implementation**: Component returns `null` during SSR and initial render, only renders portal after `isMounted` is `true`
 - **Location**: `src/components/ui/toast.tsx`
 
+### 5. Prisma JS Engine for Serverless
+
+- **Decision**: Switch Prisma generator to `engineType = "client"` and use `@prisma/adapter-pg` for Neon PostgreSQL when running on Vercel.
+- **Reason**: Removes the need to bundle the native Rust query engine binary, preventing runtime errors where `libquery_engine-rhel-openssl-3.0.x.so.node` gets stripped from serverless deployments.
+- **Implementation**: `prisma/schema.prisma` now sets `engineType = "client"` and `package.json` includes `@prisma/adapter-pg@6.19.0`. The adapter supplies the JS driver that the client engine uses to manage the PostgreSQL pool.
+- **Location**: `prisma/schema.prisma`, `package.json`, `yarn.lock`
+
+### 6. Committing Generated Prisma Client to Git
+
+- **Decision**: Use a custom output path (`../generated/client`) for Prisma client generation and commit it to git.
+- **Reason**: Ensures each deployment includes the correct Prisma client with all WASM assets, preventing runtime errors where `query_compiler_bg.wasm` or other engine files are missing. This is more reliable than relying on build-time generation or external package configuration.
+- **Implementation**:
+  - Prisma schema sets `output = "../generated/client"` in the generator block
+  - Generated client is committed to git (allowed in `.gitignore`)
+  - Imports use path alias `@/generated/client` for clean imports
+  - Generated files are excluded from ESLint
+- **Location**: `prisma/schema.prisma`, `.gitignore`, `tsconfig.json`, `eslint.config.mjs`
+
 ## Notes for AI Assistants
 
 ### Critical Implementation Details
