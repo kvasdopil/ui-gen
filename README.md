@@ -1,6 +1,6 @@
 # UI Generator
 
-An AI-powered UI mockup generator that creates beautiful, non-interactive HTML interfaces using Google Gemini and Tailwind CSS. Users can describe their desired UI in natural language, and the application generates a mobile-optimized (390px × 844px) HTML mockup rendered in an iframe.
+An AI-powered UI mockup generator that creates beautiful, non-interactive HTML interfaces using Vercel AI Gateway with xAI Grok and Tailwind CSS. Users can describe their desired UI in natural language, and the application generates a mobile-optimized (390px × 844px) HTML mockup rendered in an iframe.
 
 ## Features
 
@@ -8,7 +8,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 👤 **User Profile**: User avatar in top-right corner with profile menu showing name, email, and logout option
 - 🔒 **Protected API**: UI generation endpoint requires authenticated users
 - 🔄 **Auth Flow Preservation**: If you try to create or modify a screen without being authenticated, your prompt is automatically saved and restored after you sign in
-- 🤖 **AI-Powered Generation**: Uses Google Gemini (via Vercel AI SDK) to generate UI mockups from natural language prompts
+- 🤖 **AI-Powered Generation**: Uses Vercel AI Gateway with xAI Grok-4-fast-non-reasoning model (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
 - 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
@@ -18,6 +18,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖼️ **Iframe Rendering**: Generated HTML is safely rendered in an isolated iframe
 - ⚡ **Real-time Generation**: Fast UI generation with loading states and error handling
 - 🔄 **Loading Placeholder**: Shows a placeholder screen with spinner, "Creating UI" text, and user prompt while UI is being generated
+- ❌ **Error Display**: Shows error messages instead of loading placeholder when generation fails, with retry option available
 - 🧹 **Clean Output**: Automatically strips markdown code blocks from AI responses
 - 🔄 **Follow-up Modifications**: Iteratively refine designs by modifying previous prompts with full conversation context
 - 📜 **Conversation History**: View all previous prompts in a history panel with the ability to modify and regenerate
@@ -194,7 +195,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **Authentication**: Auth.js (NextAuth) v5 with Google OAuth provider
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
-  - Google Gemini (`@ai-sdk/google`)
+  - Vercel AI Gateway (`@ai-sdk/gateway`)
+  - xAI Grok-4-fast-non-reasoning model
 - **Database**:
   - Neon PostgreSQL - Server-side persistence for screens and dialog entries
   - Prisma ORM - Database access and migrations
@@ -298,7 +300,6 @@ yarn install
 3. Create a `.env.local` file in the root directory:
 
 ```env
-GOOGLE_GENERATIVE_AI_API_KEY=your_gemini_api_key_here
 UNSPLASH_ACCESS_KEY=your_unsplash_access_key_here
 AUTH_SECRET=your_auth_secret_here
 AUTH_URL=http://localhost:3000
@@ -307,20 +308,26 @@ GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
 DATABASE_URL=your_neon_postgresql_connection_string
 ```
 
-4. Setup Neon Database (if not already done):
+4. **Setup Vercel AI Gateway** (required for UI generation):
+   - Link your project to Vercel: `vercel link`
+   - Pull environment variables including OIDC token: `vercel env pull .env.local`
+   - This will add `VERCEL_OIDC_TOKEN` to your `.env.local` file
+   - **Note**: The OIDC token expires every 12 hours. If you get authentication errors, run `vercel env pull .env.local` again and restart your dev server
+
+5. **Setup Neon Database** (if not already done):
    - Install Neon CLI: `npm install -g neonctl` or `brew install neonctl`
    - Create Neon project: `neonctl projects create --name ui-gen --region-id aws-eu-central-1`
    - Copy the connection string to `DATABASE_URL` in `.env.local`
 
-5. Run database migrations:
+6. Run database migrations:
    ```bash
    npx prisma migrate dev
    ```
 
 Get your API keys from:
 
-- Google Gemini: [Google AI Studio](https://makersuite.google.com/app/apikey)
 - Unsplash: [Unsplash Developers](https://unsplash.com/developers) - Register as a developer and create a new application to get your Access Key
+- Vercel AI Gateway: OIDC token is automatically obtained via `vercel env pull` (no manual API key needed)
 
 ### OAuth Setup
 
@@ -451,21 +458,22 @@ yarn dev
 2. Hover over any entry in the history to reveal a menu button (three dots) on the right
 3. Click the menu button to open a dropdown menu with available actions
 4. **Keyboard Shortcut**: Press the Delete key when the latest conversation point is selected to quickly trigger the delete confirmation dialog (only works when not typing in an input field)
-5. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
+5. **Retry Failed Generation**: If a conversation point has a prompt but no HTML (generation failed), a "Retry" option will appear in the menu for that entry - click it to retry the generation
+6. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
    - The exported HTML includes a comment block at the top with all prompts used to generate that version
    - Prompt history is formatted as: `(prompt1)` separated by `--` between prompts
    - A toast notification will appear confirming the copy: "Screen {screen name} is copied to clipboard"
    - The HTML is ready to use in other projects
-6. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
+7. **Clone**: Click "Clone" on any entry to create a new screen with the full conversation history up to and including that point
    - The cloned screen will have a new unique ID
    - It will be positioned 50px offset from the original screen
    - The cloned screen will not be auto-selected (you can click it to select it)
    - The cloned point will be selected in the new screen
-7. **Delete**: Click "Delete" on the last entry to remove it from history
+8. **Delete**: Click "Delete" on the last entry to remove it from history
    - A confirmation dialog will appear before deletion
    - If you delete the currently selected entry, the previous entry will be automatically selected
    - If you delete the last remaining entry, the entire screen will be removed
-8. All changes are saved immediately to persistent storage
+9. All changes are saved immediately to persistent storage
 
 ### Making Modifications
 
@@ -612,13 +620,16 @@ All endpoints require authentication (OAuth user session).
 
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats conversation history from all dialog entries for the LLM
-- Uses Google Gemini 2.5 Flash model (fast and cost-effective)
+- Uses Vercel AI Gateway with `xai/grok-4-fast-non-reasoning` model (via `@ai-sdk/gateway`)
+- Authentication via OIDC token (`VERCEL_OIDC_TOKEN` environment variable)
 - Supports multi-turn interactions and tool calls
 - Provides `findUnsplashImage` tool for automatic image search
   - Includes validation to ensure query parameter is always provided
   - Gracefully falls back to generation without tools if tool calls fail
 - Cleans up markdown code blocks from AI responses
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`)
+- Error handling: Displays error messages instead of loading placeholder when generation fails
+- Retry support: Users can retry failed generations via the "Retry" option in the PromptPanel menu
 
 ### Authentication & User Management
 
@@ -860,7 +871,9 @@ All endpoints require authentication (OAuth user session).
 
 #### Required for Local Development
 
-- `GOOGLE_GENERATIVE_AI_API_KEY`: Your Google Gemini API key
+- `VERCEL_OIDC_TOKEN`: OIDC authentication token for Vercel AI Gateway (obtained via `vercel env pull .env.local`)
+  - **Important**: This token expires every 12 hours. If you get authentication errors, run `vercel env pull .env.local` again and restart your dev server
+  - The token is automatically obtained when using `vercel dev`, or manually via `vercel env pull`
 - `UNSPLASH_ACCESS_KEY`: Your Unsplash API Access Key (get it from [Unsplash Developers](https://unsplash.com/developers))
 - `AUTH_SECRET`: Secret key for session encryption (generate with `openssl rand -base64 32`)
 - `AUTH_URL`: Base URL for authentication (`http://localhost:3000` for local development)
@@ -878,8 +891,9 @@ Set these in Vercel project settings:
 
 The UI generation uses:
 
-- Model: `gemini-2.5-flash`
+- Model: `xai/grok-4-fast-non-reasoning` (via Vercel AI Gateway)
 - Temperature: `0.5` (balanced creativity/consistency)
+- Authentication: OIDC token via `VERCEL_OIDC_TOKEN` environment variable
 
 These can be adjusted in `src/lib/ui-generation.ts`
 

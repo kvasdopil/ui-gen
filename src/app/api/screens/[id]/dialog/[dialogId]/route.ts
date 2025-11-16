@@ -31,7 +31,10 @@ export async function PUT(
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
     const { id, dialogId } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Verify screen belongs to the user
     const screen = await prisma.screen.findFirst({
@@ -103,7 +106,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
     const { id, dialogId } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Verify screen belongs to the user
     const screen = await prisma.screen.findFirst({

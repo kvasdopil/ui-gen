@@ -1,5 +1,6 @@
 // import { openai } from "@ai-sdk/openai";
-import { google } from "@ai-sdk/google";
+// import { google } from "@ai-sdk/google";
+import { createGatewayProvider } from "@ai-sdk/gateway";
 import { generateText, tool } from "ai";
 import { z } from "zod";
 import { GENERATE_UI_PROMPT } from "@/prompts/generate-ui";
@@ -53,12 +54,18 @@ async function findUnsplashImage(query: string): Promise<string> {
 }
 
 export async function generateUIFromHistory(history: HistoryItem[]): Promise<string> {
-  // Check if API keys are configured
-  // if (!process.env.OPENAI_API_KEY) {
-  //   throw new Error("OPENAI_API_KEY is not configured");
-  // }
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not configured");
+  // Check if OIDC token is configured (Vercel AI Gateway uses OIDC authentication)
+  // The token is automatically provided when using 'vercel dev' or can be obtained via 'vercel env pull'
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+  if (!oidcToken) {
+    throw new Error(
+      `VERCEL_OIDC_TOKEN is not configured. Vercel AI Gateway requires OIDC authentication.\n` +
+        `To fix this:\n` +
+        `1. If using 'vercel dev': The token is automatically obtained and refreshed\n` +
+        `2. If using your own dev server: Run 'vercel env pull' to fetch the token\n` +
+        `3. The token expires every 12 hours, so you may need to run 'vercel env pull' again\n` +
+        `4. Make sure OIDC is enabled in your Vercel project settings (enabled by default for new projects)`,
+    );
   }
 
   if (!process.env.UNSPLASH_ACCESS_KEY) {
@@ -103,12 +110,14 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
     : conversationPrompt;
 
-  // Initialize OpenAI model using Vercel AI SDK
-  // The API key is automatically read from OPENAI_API_KEY environment variable
-  // const model = openai("gpt-5-nano");
-  // Initialize Gemini model using Vercel AI SDK
-  // The API key is automatically read from GOOGLE_GENERATIVE_AI_API_KEY environment variable
-  const model = google("gemini-2.5-flash");
+  // Initialize model using Vercel AI Gateway with xAI Grok model
+  // Vercel AI Gateway uses OIDC token authentication (VERCEL_OIDC_TOKEN)
+  // The token is automatically used if available in environment variables
+  const gatewayProvider = createGatewayProvider({
+    // OIDC token is automatically read from VERCEL_OIDC_TOKEN env var
+    // No need to explicitly pass it - the gateway provider will use it automatically
+  });
+  const model = gatewayProvider("xai/grok-4-fast-non-reasoning");
 
   // Define the Unsplash image search tool
   const findUnsplashImageTool = tool({

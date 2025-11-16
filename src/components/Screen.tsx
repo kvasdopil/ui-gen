@@ -40,6 +40,8 @@ export default function Screen({
   onCenterAndZoom,
 }: ScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorTimestamp, setErrorTimestamp] = useState<number | null>(null);
   const [conversationPoints, setConversationPoints] = useState<ConversationPoint[]>(
     screenData?.conversationPoints || [],
   );
@@ -286,6 +288,29 @@ export default function Screen({
     (selectedPromptIndex === null && isLastPointIncomplete) ||
     (htmlContent === "" && conversationPoints.length === 0 && screenData !== null);
 
+  // Check if we should show error for the current incomplete point
+  const getCurrentError = (): string | null => {
+    if (!errorMessage || !errorTimestamp) return null;
+    // Check if error is for the selected point
+    if (selectedPromptIndex !== null && conversationPoints[selectedPromptIndex]) {
+      const point = conversationPoints[selectedPromptIndex];
+      if (!point.html && point.timestamp === errorTimestamp) {
+        return errorMessage;
+      }
+    }
+    // Check if error is for the last point (when no selection)
+    if (selectedPromptIndex === null && conversationPoints.length > 0) {
+      const lastPoint = conversationPoints[conversationPoints.length - 1];
+      if (!lastPoint.html && lastPoint.timestamp === errorTimestamp) {
+        return errorMessage;
+      }
+    }
+    return null;
+  };
+
+  const currentError = getCurrentError();
+  const showError = currentError !== null && !isLoading;
+
   // Listen for height messages from iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -517,6 +542,11 @@ export default function Screen({
       const lastPoint = screenData.conversationPoints[screenData.conversationPoints.length - 1];
       // If last point has a prompt but no HTML, it means generation needs to start
       if (lastPoint.prompt && !lastPoint.html) {
+        // Don't auto-retry if there's an error for this point (user should retry manually)
+        if (errorTimestamp && lastPoint.timestamp === errorTimestamp) {
+          return;
+        }
+
         // Create a unique key for this generation attempt using the existing point's timestamp
         const generationKey = `${screenData.id}-${lastPoint.timestamp}`;
 
@@ -531,11 +561,15 @@ export default function Screen({
         generationInProgressRef.current = null;
       }
     }
-  }, [screenData, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [screenData, isLoading, errorTimestamp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (modificationPrompt: string, existingTimestamp?: number) => {
     if (!modificationPrompt.trim()) return;
     const promptToSend = modificationPrompt;
+
+    // Clear any previous error when starting a new generation
+    setErrorMessage(null);
+    setErrorTimestamp(null);
 
     let pointsWithIncomplete: ConversationPoint[];
     let incompleteIndex: number;
@@ -615,7 +649,18 @@ export default function Screen({
             signIn("google", { callbackUrl: window.location.href });
             return; // Exit early - will retry after auth
           }
-          throw new Error("Failed to generate UI");
+          // Try to extract error message from response
+          let errorMsg = "Failed to generate UI";
+          try {
+            const errorData = await response.json();
+            if (errorData.error) {
+              errorMsg = errorData.error;
+            }
+          } catch {
+            // If response is not JSON, use status text or default message
+            errorMsg = response.statusText || `Failed to generate UI (${response.status})`;
+          }
+          throw new Error(errorMsg);
         }
 
         data = await response.json();
@@ -647,6 +692,10 @@ export default function Screen({
 
       setConversationPoints(finalPoints);
 
+      // Clear any error state since generation succeeded
+      setErrorMessage(null);
+      setErrorTimestamp(null);
+
       // Reset generation tracking since we've completed
       generationInProgressRef.current = null;
 
@@ -664,35 +713,25 @@ export default function Screen({
       }
     } catch (error) {
       console.error("Error generating UI:", error);
-      // Remove the incomplete point we added earlier since generation failed
-      // Only remove if we created it (not if it was already there from auto-gen)
-      if (!existingTimestamp) {
-        // Find the incomplete point we might have added
-        const incompletePointIndex = pointsWithIncomplete.findIndex(
-          (p) => p.prompt === promptToSend && !p.html,
-        );
-        if (incompletePointIndex >= 0) {
-          const pointsWithoutIncomplete = [
-            ...pointsWithIncomplete.slice(0, incompletePointIndex),
-            ...pointsWithIncomplete.slice(incompletePointIndex + 1),
-          ];
-          setConversationPoints(pointsWithoutIncomplete);
-          setSelectedPromptIndex(
-            pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
-          );
+      // Set error message instead of removing the incomplete point
+      // This allows the user to see what went wrong and retry if needed
+      const errorMsg =
+        error instanceof Error ? error.message : "Failed to generate UI. Please try again.";
+      setErrorMessage(errorMsg);
+      setErrorTimestamp(timestampToUse);
 
-          // Update screen data to remove the incomplete point
-          if (screenData) {
-            onUpdate(id, {
-              conversationPoints: pointsWithoutIncomplete,
-              selectedPromptIndex:
-                pointsWithoutIncomplete.length > 0 ? pointsWithoutIncomplete.length - 1 : null,
-            });
-          }
-        }
+      // Keep the incomplete point so the error message can be displayed
+      // But update screenData to prevent auto-generation from retrying
+      // We'll mark it by keeping the incomplete point but preventing auto-retry
+      if (screenData) {
+        // Update screenData to reflect current state (incomplete point with error)
+        onUpdate(id, {
+          conversationPoints: pointsWithIncomplete,
+          selectedPromptIndex: incompleteIndex,
+        });
       }
 
-      // Reset generation tracking on error so it can be retried
+      // Reset generation tracking on error so it can be retried manually
       generationInProgressRef.current = null;
     } finally {
       setIsLoading(false);
@@ -819,6 +858,12 @@ export default function Screen({
             onPromptSelect={handlePromptSelect}
             onDeletePoint={handleDeletePoint}
             onClone={(pointIndex) => onClone(id, pointIndex)}
+            onRetry={(pointIndex) => {
+              const point = conversationPoints[pointIndex];
+              if (point && point.prompt) {
+                handleSend(point.prompt, point.timestamp);
+              }
+            }}
             screenName={screenTitle}
             screenId={id}
             getHtmlForPoint={(pointIndex) => {
@@ -864,15 +909,33 @@ export default function Screen({
                 height: `${iframeHeight}px`,
               }}
             >
-              <div className="flex flex-col items-center gap-4">
-                <FaSpinner className="text-primary h-8 w-8 animate-spin" />
-                <p className="text-primary text-base font-medium">Creating UI</p>
-                {currentPrompt && (
-                  <p className="text-muted-foreground max-w-[320px] text-center text-xs">
-                    {currentPrompt}
-                  </p>
-                )}
-              </div>
+              {showError ? (
+                <div className="flex flex-col items-center gap-4 px-4">
+                  <div className="flex flex-col items-center gap-2">
+                    <p className="text-base font-medium text-red-600 dark:text-red-400">
+                      Generation Failed
+                    </p>
+                    <p className="max-w-[320px] text-center text-sm text-red-500 dark:text-red-300">
+                      {currentError}
+                    </p>
+                  </div>
+                  {currentPrompt && (
+                    <p className="text-muted-foreground max-w-[320px] text-center text-xs">
+                      Prompt: {currentPrompt}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4">
+                  <FaSpinner className="text-primary h-8 w-8 animate-spin" />
+                  <p className="text-primary text-base font-medium">Creating UI</p>
+                  {currentPrompt && (
+                    <p className="text-muted-foreground max-w-[320px] text-center text-xs">
+                      {currentPrompt}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ) : htmlContent ? (
             <>

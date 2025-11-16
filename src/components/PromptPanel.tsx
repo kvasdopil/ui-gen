@@ -26,6 +26,7 @@ interface PromptPanelProps {
   onPromptSelect: (pointIndex: number) => void;
   onDeletePoint: (pointIndex: number) => void;
   onClone: (pointIndex: number) => void;
+  onRetry?: (pointIndex: number) => void;
   screenName: string | null;
   screenId: string;
   getHtmlForPoint: (pointIndex: number) => string;
@@ -44,6 +45,7 @@ const PromptPanel = forwardRef<PromptPanelHandle, PromptPanelProps>(function Pro
     onPromptSelect,
     onDeletePoint,
     onClone,
+    onRetry,
     screenName,
     screenId,
     getHtmlForPoint,
@@ -123,6 +125,12 @@ const PromptPanel = forwardRef<PromptPanelHandle, PromptPanelProps>(function Pro
     onClone(index);
   };
 
+  const handleRetryClick = (index: number) => {
+    if (onRetry) {
+      onRetry(index);
+    }
+  };
+
   const handleExportClick = async (index: number) => {
     try {
       const html = getHtmlForPoint(index);
@@ -169,6 +177,7 @@ ${html}`;
         {/* Display all conversation points (prompts) */}
         {conversationPoints.map((point, index) => {
           const isLastEntry = index === conversationPoints.length - 1;
+          const hasError = isLastEntry && point.prompt && !point.html;
           return (
             <div key={index} className="group flex items-center gap-1">
               <Card
@@ -203,6 +212,12 @@ ${html}`;
                       <FaCopy className="mr-2 h-4 w-4" />
                       <span>Clone</span>
                     </DropdownMenuItem>
+                    {hasError && onRetry && (
+                      <DropdownMenuItem onClick={() => handleRetryClick(index)}>
+                        <FaMagic className="mr-2 h-4 w-4" />
+                        <span>Retry</span>
+                      </DropdownMenuItem>
+                    )}
                     {isLastEntry && (
                       <DropdownMenuItem
                         variant="destructive"

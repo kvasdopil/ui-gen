@@ -407,13 +407,17 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **UI Generation**: `src/lib/ui-generation.ts`
   - Extracted reusable function `generateUIFromHistory()`
   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
-  - Uses `gemini-2.5-flash` model with temperature 0.5
+  - Uses Vercel AI Gateway with `xai/grok-4-fast-non-reasoning` model via `@ai-sdk/gateway`
+  - Authentication: Uses OIDC token from `VERCEL_OIDC_TOKEN` environment variable (automatically obtained via `vercel env pull`)
+  - Temperature: 0.5 (balanced creativity/consistency)
   - Provides `findUnsplashImage` tool for automatic image search
     - Tool includes validation to ensure query parameter is always provided (non-empty string)
     - Gracefully falls back to generation without tools if tool calls fail
     - Wrapped in try-catch that retries generation without tools on error
   - Cleans markdown code blocks from response
   - Returns HTML with title metadata comment (`<!-- Title: ... -->`)
+  - **Error Handling**: Displays error messages instead of loading placeholder when generation fails
+  - **Retry Support**: Users can retry failed generations via the "Retry" option in the PromptPanel menu
 
 - **Deprecated**: `src/app/api/create/route.ts`
   - Kept for backward compatibility

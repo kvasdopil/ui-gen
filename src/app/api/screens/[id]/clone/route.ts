@@ -18,7 +18,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
     const { id } = await params;
-    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
+    const userId = crypto
+      .createHash("sha256")
+      .update(user.email.toLowerCase().trim())
+      .digest("hex");
 
     // Verify source screen belongs to the user
     const sourceScreen = await prisma.screen.findFirst({
