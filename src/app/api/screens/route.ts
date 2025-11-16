@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getWorkspaceById } from "@/lib/auth";
+import { getAuthenticatedUser, getWorkspaceById, touchWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createScreenSchema } from "@/lib/validations";
 
@@ -67,6 +67,10 @@ export async function GET(request: NextRequest) {
               where: { id: entry.id },
               data: { arrows: validArrows },
             })
+            .then(() => {
+              // Update workspace's updatedAt timestamp
+              return touchWorkspace(workspace.id);
+            })
             .catch((error) => {
               console.error(
                 `Error cleaning up invalid arrows for dialog entry ${entry.id}:`,
@@ -123,6 +127,9 @@ export async function POST(request: NextRequest) {
         selectedPromptIndex: validatedData.selectedPromptIndex ?? null,
       },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(workspace.id);
 
     // Transform to match ScreenData type
     const screenData = {

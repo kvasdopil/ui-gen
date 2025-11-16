@@ -53,7 +53,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🖱️ **Dialog Dismissal**: Clicking on the viewport dismisses the new screen dialog and popup, unselects the current screen, and removes pending arrows
 - 📁 **Multi-File Workspaces**: Create and manage multiple workspaces to organize different projects or design iterations
 - 🏷️ **Editable Workspace Names**: Click on the workspace name in the header to edit it in-place (Enter to save, Escape to cancel)
-- 📋 **Workspace Selection Screen**: Access all your workspaces from the `/files` page with a grid layout showing workspace name, screen count, and creation date
+- 📋 **Workspace Selection Screen**: Access all your workspaces from the `/files` page with a grid layout showing workspace name, screen count, and last update date
+- 🔄 **Automatic Workspace Updates**: Workspace modification timestamps are automatically updated whenever screens or dialog entries are created, modified, or deleted
+- 📅 **Sorted by Modification**: Workspaces are sorted by last modification date (newest first) on the files page
 - ➕ **Create New Workspaces**: Create new workspaces with auto-generated names (e.g., "Workspace 1", "Workspace 2") or custom names
 - 🗑️ **Delete Workspaces**: Delete any workspace including all its screens with a confirmation dialog
 - 🔄 **Workspace-Specific State**: Each workspace maintains its own screens and viewport transform (pan/zoom) state
@@ -161,7 +163,9 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 
 - **As a** user, **I want to** create multiple workspaces, **so that** I can organize different projects or design iterations separately
 - **As a** user, **I want to** see all my workspaces in a grid layout, **so that** I can easily browse and select the one I want to work on
-- **As a** user, **I want to** see workspace information (name, screen count, creation date) for each workspace, **so that** I can identify them easily
+- **As a** user, **I want to** see workspace information (name, screen count, last update date) for each workspace, **so that** I can identify them easily
+- **As a** user, **I want** workspaces to be sorted by last modification date, **so that** I can quickly find recently worked-on projects
+- **As a** user, **I want** workspace modification timestamps to update automatically when I create or modify screens, **so that** the files page always shows accurate activity information
 - **As a** user, **I want to** edit workspace names in-place by clicking on them, **so that** I can quickly rename workspaces
 - **As a** user, **I want to** delete workspaces I no longer need, **so that** I can keep my workspace list clean
 - **As a** user, **I want** a confirmation dialog before deleting a workspace, **so that** I don't accidentally lose all my screens
@@ -402,11 +406,13 @@ yarn dev
 ### Workspace Management
 
 1. **Access Workspaces**: When you first visit the app, you'll be redirected to the `/files` page showing all your workspaces
-2. **Create Workspace**: Click the "Create New Workspace" card (with plus icon) to create a new workspace with an auto-generated name
-3. **Select Workspace**: Click on any workspace card to open it and start working
-4. **Edit Workspace Name**: In a workspace, click on the workspace name in the top-left header to edit it in-place (Enter to save, Escape to cancel)
-5. **Delete Workspace**: Hover over a workspace card to reveal the delete icon, then click it and confirm deletion
-6. **Navigate Back**: Click the arrow left icon in the workspace header to return to the files page
+2. **Workspace Sorting**: Workspaces are automatically sorted by last modification date (newest first), so recently worked-on projects appear at the top
+3. **Create Workspace**: Click the "Create New Workspace" card (with plus icon) to create a new workspace with an auto-generated name
+4. **Select Workspace**: Click on any workspace card to open it and start working
+5. **Edit Workspace Name**: In a workspace, click on the workspace name in the top-left header to edit it in-place (Enter to save, Escape to cancel)
+6. **Delete Workspace**: Hover over a workspace card to reveal the delete icon, then click it and confirm deletion
+7. **Navigate Back**: Click the arrow left icon in the workspace header to return to the files page
+8. **Automatic Updates**: The workspace's last modification date is automatically updated whenever you create, modify, or delete screens or dialog entries
 
 ### Initial Generation
 
@@ -576,11 +582,13 @@ All endpoints require authentication (OAuth user session).
 
 **Workspaces:**
 
-- `GET /api/workspaces` - List all workspaces for the authenticated user
+- `GET /api/workspaces` - List all workspaces for the authenticated user (sorted by `updatedAt` descending)
 - `POST /api/workspaces` - Create a new workspace (optional `name` parameter, auto-generates if not provided)
 - `GET /api/workspaces/:id` - Get a specific workspace by ID
 - `PUT /api/workspaces/:id` - Update workspace name
 - `DELETE /api/workspaces/:id` - Delete workspace and all associated screens (cascade delete)
+
+**Note**: The workspace's `updatedAt` timestamp is automatically updated whenever screens or dialog entries are created, modified, or deleted via the `touchWorkspace()` helper function.
 
 **Screens:**
 
@@ -642,6 +650,7 @@ All endpoints require authentication (OAuth user session).
 - **Workspace Management**: `src/lib/auth.ts`
   - `getAuthenticatedUser()` - Gets authenticated user from session
   - `getWorkspaceById()` - Gets a specific workspace by ID and verifies ownership
+  - `touchWorkspace()` - Updates workspace's `updatedAt` timestamp (called automatically when workspace content changes)
 - **Workspace Routes**:
   - `/files` - Workspace selection page showing all user workspaces in a grid (page title: "Workspaces - UI Generator")
   - `/ws/:id` - Individual workspace page with viewport and screens (page title: "{workspace name} - UI Generator")

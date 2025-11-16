@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, touchWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/client";
 import { z } from "zod";
@@ -101,6 +101,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         },
       },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(sourceScreen.workspaceId);
 
     // Transform to match ScreenData type
     const screenData = {

@@ -39,3 +39,14 @@ export async function getWorkspaceById(email: string, workspaceId: string) {
 
   return workspace;
 }
+
+/**
+ * Update workspace's updatedAt timestamp
+ * This should be called whenever workspace content (screens, dialog entries) changes
+ */
+export async function touchWorkspace(workspaceId: string): Promise<void> {
+  await prisma.workspace.update({
+    where: { id: workspaceId },
+    data: { updatedAt: new Date() },
+  });
+}

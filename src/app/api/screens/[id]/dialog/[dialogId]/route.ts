@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, touchWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import crypto from "crypto";
@@ -73,6 +73,9 @@ export async function PUT(
       },
     });
 
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(screen.workspaceId);
+
     return NextResponse.json({
       id: updatedEntry.id,
       prompt: updatedEntry.prompt,
@@ -137,10 +140,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Dialog entry not found" }, { status: 404 });
     }
 
+    const workspaceId = screen.workspaceId;
+
     // Delete dialog entry
     await prisma.dialogEntry.delete({
       where: { id: dialogId },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(workspaceId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

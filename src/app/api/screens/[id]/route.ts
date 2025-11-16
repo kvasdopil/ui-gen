@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, touchWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateScreenSchema } from "@/lib/validations";
 import crypto from "crypto";
@@ -51,6 +51,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         },
       },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(existingScreen.workspaceId);
 
     // Transform to match ScreenData type
     const screenData = {
@@ -115,10 +118,15 @@ export async function DELETE(
       return NextResponse.json({ error: "Screen not found" }, { status: 404 });
     }
 
+    const workspaceId = existingScreen.workspaceId;
+
     // Delete screen (cascade will delete dialog entries)
     await prisma.screen.delete({
       where: { id },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(workspaceId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

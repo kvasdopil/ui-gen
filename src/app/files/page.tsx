@@ -13,6 +13,7 @@ interface Workspace {
   id: string;
   name: string;
   createdAt: string;
+  updatedAt: string;
   screenCount: number;
   isDefault: boolean;
 }
@@ -146,7 +147,7 @@ export default function FilesPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {/* Create Workspace Card */}
           <div
-            className="flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white p-4 transition-colors hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-slate-500"
+            className="flex h-[200px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-white p-4 transition-colors hover:border-gray-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-slate-500"
             onClick={handleCreateWorkspace}
           >
             {isCreating ? (
@@ -163,7 +164,7 @@ export default function FilesPage() {
           {workspaces.map((workspace) => (
             <div
               key={workspace.id}
-              className={`relative flex cursor-pointer flex-col rounded-lg border p-4 transition-all hover:shadow-md ${
+              className={`relative flex h-[200px] cursor-pointer flex-col rounded-lg border p-4 transition-all hover:shadow-md ${
                 hoveredDeleteId === workspace.id
                   ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30"
                   : "border-gray-200 bg-white dark:border-slate-700 dark:bg-slate-800"
@@ -204,7 +205,7 @@ export default function FilesPage() {
                   <div>
                     {workspace.screenCount} screen{workspace.screenCount !== 1 ? "s" : ""}
                   </div>
-                  <div>Created {formatDate(workspace.createdAt)}</div>
+                  <div>Updated {formatDate(workspace.updatedAt)}</div>
                   {workspace.isDefault && (
                     <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                       Default

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { getAuthenticatedUser, touchWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createDialogSchema } from "@/lib/validations";
 import { generateUIFromHistory } from "@/lib/ui-generation";
@@ -137,6 +137,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         timestamp: BigInt(Date.now()),
       },
     });
+
+    // Update workspace's updatedAt timestamp
+    await touchWorkspace(screen.workspaceId);
 
     return NextResponse.json(
       {

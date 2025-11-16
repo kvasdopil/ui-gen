@@ -34,7 +34,7 @@ export async function GET() {
         },
       },
       orderBy: {
-        createdAt: "asc",
+        updatedAt: "desc",
       },
     });
 
@@ -43,6 +43,7 @@ export async function GET() {
       id: workspace.id,
       name: workspace.name,
       createdAt: workspace.createdAt,
+      updatedAt: workspace.updatedAt,
       screenCount: workspace._count.screens,
       isDefault: workspace.name === "default",
     }));
