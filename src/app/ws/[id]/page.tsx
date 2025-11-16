@@ -8,7 +8,7 @@ import UserAvatar from "@/components/UserAvatar";
 import WorkspaceHeader from "@/components/WorkspaceHeader";
 import CreateScreenPopup from "@/components/CreateScreenPopup";
 import NewScreenDialog from "@/components/NewScreenDialog";
-import ArrowLine from "@/components/ArrowLine";
+import JointJSArrows from "@/components/JointJSArrows";
 import CreateFromTouchableButton from "@/components/CreateFromTouchableButton";
 import Viewport, { type ViewportHandle } from "@/components/Viewport";
 import { usePersistentState } from "@/hooks/usePersistentState";
@@ -1256,22 +1256,28 @@ export default function WorkspacePage() {
           onMouseLeave={handleMouseUp}
           style={{ cursor: isDraggingScreen ? "grabbing" : "default" }}
         >
-          {/* Arrow line overlay - rendered in content coordinates */}
-          {arrowLine &&
-            (() => {
+          {/* Collect all arrows for JointJS rendering */}
+          {(() => {
+            const viewportToContent = viewportHandleRef.current?.viewportToContent;
+            if (!viewportToContent) return null;
+
+            const allArrows: Array<{
+              id: string;
+              start: { x: number; y: number };
+              end: { x: number; y: number };
+              startScreenBounds?: { x: number; y: number; width: number; height: number };
+              endScreenBounds?: { x: number; y: number; width: number; height: number };
+              isActive?: boolean;
+            }> = [];
+
+            // Add pending arrow if exists
+            if (arrowLine) {
               const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
               const endScreenId = hoveredScreenIdRef.current;
               const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
 
-              // Convert from viewport coordinates to content coordinates
-              const viewportToContent = viewportHandleRef.current?.viewportToContent;
-              if (!viewportToContent) return null;
               const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
               const endContent = viewportToContent(arrowLine.end.x, arrowLine.end.y);
-              const startContentX = startContent.x;
-              const startContentY = startContent.y;
-              const endContentX = endContent.x;
-              const endContentY = endContent.y;
 
               const startScreenBounds = startScreen?.position
                 ? {
@@ -1289,45 +1295,33 @@ export default function WorkspacePage() {
                     height: endScreen.height || 844,
                   }
                 : undefined;
-              // Check if arrow is active (related to selected screen)
+
               const isActive =
                 selectedScreenId === arrowLine.startScreenId || selectedScreenId === endScreenId;
-              return (
-                <>
-                  <ArrowLine
-                    start={{ x: startContentX, y: startContentY }}
-                    end={{ x: endContentX, y: endContentY }}
-                    startScreenBounds={startScreenBounds}
-                    endScreenBounds={endScreenBounds}
-                    isActive={isActive}
-                    markerId={`arrow-${arrowLine.startScreenId}-${endScreenId || "pending"}`}
-                  />
-                  {arrowLine.isPending && (
-                    <CreateFromTouchableButton
-                      position={{ x: endContentX, y: endContentY }}
-                      onClick={handleCreateScreenFromPendingArrow}
-                      disabled={isCloningScreen}
-                      touchableId={arrowLine.touchableId}
-                    />
-                  )}
-                </>
-              );
-            })()}
-          {/* Render all stored arrows from conversation points */}
-          {screens.flatMap((screen) => {
-            if (!screen.position) return [];
 
-            return screen.conversationPoints.flatMap(
-              (conversationPoint, conversationPointIndex) => {
+              allArrows.push({
+                id: `pending-${arrowLine.startScreenId}-${endScreenId || "pending"}`,
+                start: { x: startContent.x, y: startContent.y },
+                end: { x: endContent.x, y: endContent.y },
+                startScreenBounds,
+                endScreenBounds,
+                isActive,
+              });
+            }
+
+            // Add all stored arrows from conversation points
+            screens.forEach((screen) => {
+              if (!screen.position) return;
+
+              screen.conversationPoints.forEach((conversationPoint, conversationPointIndex) => {
                 const arrows = conversationPoint.arrows || [];
-                // Filter out arrows without valid targetScreenId
-                return arrows
+                arrows
                   .filter((arrow) => {
                     if (!arrow.targetScreenId) return false;
                     const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
                     return !!endScreen;
                   })
-                  .map((arrow, arrowIndex) => {
+                  .forEach((arrow, arrowIndex) => {
                     const endScreen = screens.find((s) => s.id === arrow.targetScreenId);
 
                     // Calculate start point: use stored startPoint if available, otherwise use screen center
@@ -1360,21 +1354,40 @@ export default function WorkspacePage() {
                     // Check if arrow is active (related to selected screen)
                     const isActive =
                       selectedScreenId === screen.id || selectedScreenId === endScreen?.id;
+
+                    allArrows.push({
+                      id: `${screen.id}-${conversationPointIndex}-${arrowIndex}`,
+                      start: { x: startContentX, y: startContentY },
+                      end: { x: endContentX, y: endContentY },
+                      startScreenBounds,
+                      endScreenBounds,
+                      isActive,
+                    });
+                  });
+              });
+            });
+
+            const transform = viewportHandleRef.current?.getTransform();
+            const viewportScale = transform?.scale || 1;
+
+            return (
+              <>
+                <JointJSArrows arrows={allArrows} viewportScale={viewportScale} />
+                {arrowLine?.isPending &&
+                  (() => {
+                    const endContent = viewportToContent(arrowLine.end.x, arrowLine.end.y);
                     return (
-                      <ArrowLine
-                        key={`${screen.id}-${conversationPointIndex}-${arrowIndex}`}
-                        start={{ x: startContentX, y: startContentY }}
-                        end={{ x: endContentX, y: endContentY }}
-                        startScreenBounds={startScreenBounds}
-                        endScreenBounds={endScreenBounds}
-                        isActive={isActive}
-                        markerId={`arrow-${screen.id}-${arrow.targetScreenId}-${conversationPointIndex}-${arrowIndex}`}
+                      <CreateFromTouchableButton
+                        position={{ x: endContent.x, y: endContent.y }}
+                        onClick={handleCreateScreenFromPendingArrow}
+                        disabled={isCloningScreen}
+                        touchableId={arrowLine.touchableId}
                       />
                     );
-                  });
-              },
+                  })()}
+              </>
             );
-          })}
+          })()}
           {!isLoadingScreens && screens.length === 0 && (
             <div
               style={{
