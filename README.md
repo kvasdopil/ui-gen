@@ -645,7 +645,7 @@ All endpoints require authentication (OAuth user session).
 - **Workspace Routes**:
   - `/files` - Workspace selection page showing all user workspaces in a grid (page title: "Workspaces - UI Generator")
   - `/ws/:id` - Individual workspace page with viewport and screens (page title: "{workspace name} - UI Generator")
-  - `/` - Redirects to `/files` for workspace selection
+  - `/` - Shows sign-in page if not authenticated, redirects to `/files` if authenticated
 - **UserAvatar Component**: `src/components/UserAvatar.tsx`
   - Fixed position in top-right corner (not affected by viewport transforms)
   - Shows default icon when not authenticated

@@ -314,7 +314,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Arrows without `targetScreenId` are also filtered out
 - **Location**: `src/app/api/screens/route.ts`, `src/app/page.tsx`
 
-### 23. Dialog Dismissal on Viewport Click
+### 24. Dialog Dismissal on Viewport Click
 
 - **Decision**: Dismiss dialogs (NewScreenDialog, CreateScreenPopup) when clicking on viewport
 - **Reason**: Provides intuitive way to cancel dialog operations and clean up UI state
@@ -326,7 +326,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Early return checks prevent dismissal when clicking on the dialogs themselves
 - **Location**: `src/components/NewScreenDialog.tsx`, `src/app/page.tsx`
 
-### 24. Loading States for Screen Creation
+### 25. Loading States for Screen Creation
 
 - **Decision**: Show loading spinners and disable buttons during screen creation/cloning operations
 - **Reason**: Prevents double submissions and provides clear visual feedback during async operations
@@ -339,7 +339,18 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Loading states are cleared in finally blocks and on early returns (errors, auth redirects)
 - **Location**: `src/app/page.tsx`, `src/components/NewScreenDialog.tsx`
 
-### 22. Auth Flow Preservation
+### 22. Root Page Authentication Check
+
+- **Decision**: Root page (`/`) checks authentication before redirecting to `/files`
+- **Reason**: Prevents infinite redirect loop between `/` and `/files` when user is not authenticated
+- **Implementation**:
+  - Root page only redirects to `/files` if user is authenticated (`session` exists)
+  - If not authenticated, shows sign-in page with UserAvatar component
+  - `/files` page redirects to `/` when not authenticated (for consistency)
+  - This breaks the redirect loop: unauthenticated users stay on `/` with sign-in UI
+- **Location**: `src/app/page.tsx`
+
+### 23. Auth Flow Preservation
 
 - **Decision**: Preserve prompts and restore create flow after authentication
 - **Reason**: When users try to create/modify screens without being authenticated, they shouldn't lose their work
