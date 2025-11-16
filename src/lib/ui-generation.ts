@@ -55,9 +55,13 @@ async function findUnsplashImage(query: string): Promise<string> {
 
 export async function generateUIFromHistory(history: HistoryItem[]): Promise<string> {
   // Check if OIDC token is configured (Vercel AI Gateway uses OIDC authentication)
-  // The token is automatically provided when using 'vercel dev' or can be obtained via 'vercel env pull'
+  // In production/preview: Vercel automatically provides the token via headers (handled by gateway provider)
+  // In local development: Token must be in VERCEL_OIDC_TOKEN environment variable
+  const isVercelProduction = process.env.VERCEL === "1";
   const oidcToken = process.env.VERCEL_OIDC_TOKEN;
-  if (!oidcToken) {
+
+  // Only check for token in local development (not in Vercel production/preview)
+  if (!isVercelProduction && !oidcToken) {
     throw new Error(
       `VERCEL_OIDC_TOKEN is not configured. Vercel AI Gateway requires OIDC authentication.\n` +
         `To fix this:\n` +

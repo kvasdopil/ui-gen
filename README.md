@@ -874,6 +874,7 @@ All endpoints require authentication (OAuth user session).
 - `VERCEL_OIDC_TOKEN`: OIDC authentication token for Vercel AI Gateway (obtained via `vercel env pull .env.local`)
   - **Important**: This token expires every 12 hours. If you get authentication errors, run `vercel env pull .env.local` again and restart your dev server
   - The token is automatically obtained when using `vercel dev`, or manually via `vercel env pull`
+  - **Production Note**: In production/preview environments on Vercel, the OIDC token is automatically provided via request headers - you do NOT need to set this as an environment variable in Vercel project settings
 - `UNSPLASH_ACCESS_KEY`: Your Unsplash API Access Key (get it from [Unsplash Developers](https://unsplash.com/developers))
 - `AUTH_SECRET`: Secret key for session encryption (generate with `openssl rand -base64 32`)
 - `AUTH_URL`: Base URL for authentication (`http://localhost:3000` for local development)
@@ -886,6 +887,7 @@ All endpoints require authentication (OAuth user session).
 Set these in Vercel project settings:
 
 - All the above variables with `AUTH_URL` set to your production domain (e.g., `https://ui.guskov.dev`)
+- **Note**: `VERCEL_OIDC_TOKEN` is **NOT** required in production - Vercel automatically provides the OIDC token via request headers in production/preview environments. The gateway provider handles this automatically.
 
 ### AI Model Configuration
 

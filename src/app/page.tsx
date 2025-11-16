@@ -31,9 +31,7 @@ export default function Home() {
       <UserAvatar />
       <div className="text-center">
         <h1 className="mb-4 text-3xl font-bold">UI Generator</h1>
-        <p className="text-gray-500 dark:text-gray-400">
-          Sign in to get started
-        </p>
+        <p className="text-gray-500 dark:text-gray-400">Sign in to get started</p>
       </div>
     </div>
   );
