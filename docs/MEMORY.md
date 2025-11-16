@@ -434,7 +434,6 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Key Functions**:
   - `getAuthenticatedUser()` - Gets authenticated user from session (requires email)
   - `getWorkspaceById()` - Gets a specific workspace by ID and verifies it belongs to the authenticated user
-  - `getOrCreateWorkspace()` - Gets the default workspace (throws error if it doesn't exist, no auto-creation)
   - `hashEmail()` - Creates SHA-256 hash of email for use as userId
   - Uses email hash for privacy (emails not stored in plain text)
 

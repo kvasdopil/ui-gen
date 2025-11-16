@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import crypto from "crypto";
 
 const updateDialogEntrySchema = z.object({
   arrows: z
@@ -29,14 +30,16 @@ export async function PUT(
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
     const { id, dialogId } = await params;
+    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
 
-    // Verify screen belongs to user's workspace
+    // Verify screen belongs to the user
     const screen = await prisma.screen.findFirst({
       where: {
         id,
-        workspaceId: workspace.id,
+        workspace: {
+          userId,
+        },
       },
     });
 
@@ -99,14 +102,16 @@ export async function DELETE(
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
     const { id, dialogId } = await params;
+    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
 
-    // Verify screen belongs to user's workspace
+    // Verify screen belongs to the user
     const screen = await prisma.screen.findFirst({
       where: {
         id,
-        workspaceId: workspace.id,
+        workspace: {
+          userId,
+        },
       },
     });
 

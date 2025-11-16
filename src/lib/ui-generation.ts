@@ -1,3 +1,4 @@
+// import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
 import { generateText, tool } from "ai";
 import { z } from "zod";
@@ -53,6 +54,9 @@ async function findUnsplashImage(query: string): Promise<string> {
 
 export async function generateUIFromHistory(history: HistoryItem[]): Promise<string> {
   // Check if API keys are configured
+  // if (!process.env.OPENAI_API_KEY) {
+  //   throw new Error("OPENAI_API_KEY is not configured");
+  // }
   if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
     throw new Error("GOOGLE_GENERATIVE_AI_API_KEY is not configured");
   }
@@ -99,6 +103,9 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
     : conversationPrompt;
 
+  // Initialize OpenAI model using Vercel AI SDK
+  // The API key is automatically read from OPENAI_API_KEY environment variable
+  // const model = openai("gpt-5-nano");
   // Initialize Gemini model using Vercel AI SDK
   // The API key is automatically read from GOOGLE_GENERATIVE_AI_API_KEY environment variable
   const model = google("gemini-2.5-flash");
@@ -107,7 +114,8 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
   const findUnsplashImageTool = tool({
     description:
       "Search Unsplash for images matching a query string. Returns a medium-resolution image URL that can be used in HTML img tags. Always provide a descriptive query string.",
-    parameters: z.object({
+    // OpenAI/AI SDK v5 uses inputSchema
+    inputSchema: z.object({
       query: z
         .string()
         .min(1)
@@ -115,14 +123,23 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
           "The search query to find matching images on Unsplash (required, must be a non-empty string)",
         ),
     }),
-    execute: async ({ query }) => {
+    // Google/AI SDK v4 used parameters (commented out for reference)
+    // parameters: z.object({
+    //   query: z
+    //     .string()
+    //     .min(1)
+    //     .describe(
+    //       "The search query to find matching images on Unsplash (required, must be a non-empty string)",
+    //     ),
+    // }),
+    execute: async (args: { query: string }) => {
       // Validate query parameter
-      if (!query || typeof query !== "string" || query.trim().length === 0) {
+      if (!args.query || typeof args.query !== "string" || args.query.trim().length === 0) {
         const error = "Query parameter is required and must be a non-empty string";
         console.error(`[Tool Call] findUnsplashImage - Error: ${error}`);
         throw new Error(error);
       }
-      return await findUnsplashImage(query);
+      return await findUnsplashImage(args.query);
     },
   });
 
@@ -137,7 +154,6 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       tools: {
         findUnsplashImage: findUnsplashImageTool,
       },
-      maxSteps: 5,
     });
     text = result.text;
   } catch (error) {

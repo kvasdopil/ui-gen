@@ -20,31 +20,6 @@ export async function getAuthenticatedUser() {
 }
 
 /**
- * Get default workspace for the authenticated user
- * Uses email hash as userId for privacy and consistency
- * Throws error if workspace doesn't exist (no auto-creation)
- */
-export async function getOrCreateWorkspace(email: string) {
-  const userId = hashEmail(email);
-
-  // Get user's default workspace
-  const workspace = await prisma.workspace.findUnique({
-    where: {
-      userId_name: {
-        userId,
-        name: "default",
-      },
-    },
-  });
-
-  if (!workspace) {
-    throw new Error("Default workspace not found");
-  }
-
-  return workspace;
-}
-
-/**
  * Get workspace by ID for the authenticated user
  * Verifies that the workspace belongs to the user
  */

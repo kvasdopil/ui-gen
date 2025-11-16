@@ -254,7 +254,7 @@ ui-gen/
 │   │   ├── types.ts                  # TypeScript type definitions
 │   │   ├── storage.ts                # Storage abstraction (API + IndexedDB)
 │   │   ├── prisma.ts                 # Prisma client singleton
-│   │   ├── auth.ts                   # Auth helpers (getAuthenticatedUser, getOrCreateWorkspace)
+│   │   ├── auth.ts                   # Auth helpers (getAuthenticatedUser, getWorkspaceById)
 │   │   ├── validations.ts            # Zod validation schemas
 │   │   ├── ui-generation.ts           # Extracted UI generation logic
 │   │   └── utils.ts                  # Utility functions
@@ -613,7 +613,7 @@ All endpoints require authentication (OAuth user session).
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats conversation history from all dialog entries for the LLM
 - Uses Google Gemini 2.5 Flash model (fast and cost-effective)
-- Supports up to 5 conversation steps (`maxSteps: 5`) for multi-turn interactions and tool calls
+- Supports multi-turn interactions and tool calls
 - Provides `findUnsplashImage` tool for automatic image search
   - Includes validation to ensure query parameter is always provided
   - Gracefully falls back to generation without tools if tool calls fail
@@ -631,7 +631,6 @@ All endpoints require authentication (OAuth user session).
 - **Workspace Management**: `src/lib/auth.ts`
   - `getAuthenticatedUser()` - Gets authenticated user from session
   - `getWorkspaceById()` - Gets a specific workspace by ID and verifies ownership
-  - `getOrCreateWorkspace()` - Gets the default workspace (throws error if it doesn't exist, no auto-creation)
 - **Workspace Routes**:
   - `/files` - Workspace selection page showing all user workspaces in a grid (page title: "Workspaces - UI Generator")
   - `/ws/:id` - Individual workspace page with viewport and screens (page title: "{workspace name} - UI Generator")

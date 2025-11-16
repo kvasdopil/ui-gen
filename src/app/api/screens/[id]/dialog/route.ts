@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createDialogSchema } from "@/lib/validations";
 import { generateUIFromHistory } from "@/lib/ui-generation";
+import crypto from "crypto";
 
 // Helper function to extract title from HTML
 function extractTitle(html: string): string | null {
@@ -30,14 +31,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
     const { id } = await params;
+    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
 
-    // Verify screen belongs to user's workspace
+    // Get screen and verify it belongs to the user
     const screen = await prisma.screen.findFirst({
       where: {
         id,
-        workspaceId: workspace.id,
+        workspace: {
+          userId,
+        },
       },
     });
 
@@ -82,14 +85,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
     const { id } = await params;
+    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
 
-    // Verify screen belongs to user's workspace
+    // Get screen and verify it belongs to the user
     const screen = await prisma.screen.findFirst({
       where: {
         id,
-        workspaceId: workspace.id,
+        workspace: {
+          userId,
+        },
       },
       include: {
         dialogEntries: {

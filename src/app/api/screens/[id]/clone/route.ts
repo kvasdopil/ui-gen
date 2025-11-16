@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthenticatedUser, getOrCreateWorkspace } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/client";
 import { z } from "zod";
+import crypto from "crypto";
 
 const cloneScreenSchema = z.object({
   convPointId: z.string().min(1, "Conversation point ID is required"),
@@ -16,14 +17,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!user.email) {
       return NextResponse.json({ error: "Email not found in session" }, { status: 401 });
     }
-    const workspace = await getOrCreateWorkspace(user.email);
     const { id } = await params;
+    const userId = crypto.createHash("sha256").update(user.email.toLowerCase().trim()).digest("hex");
 
-    // Verify source screen belongs to user's workspace
+    // Verify source screen belongs to the user
     const sourceScreen = await prisma.screen.findFirst({
       where: {
         id,
-        workspaceId: workspace.id,
+        workspace: {
+          userId,
+        },
       },
       include: {
         dialogEntries: {
@@ -70,10 +73,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
 
-    // Create new screen with the specified position
+    // Create new screen with the specified position in the same workspace
     const newScreen = await prisma.screen.create({
       data: {
-        workspaceId: workspace.id,
+        workspaceId: sourceScreen.workspaceId,
         positionX: validatedData.x,
         positionY: validatedData.y,
         selectedPromptIndex,
