@@ -1006,6 +1006,7 @@ export default function Screen({
                         key={highlight.touchableId}
                         className="absolute cursor-crosshair border-2"
                         data-overlay-highlight
+                        title={highlight.touchableId}
                         style={{
                           left: `${highlight.x}px`,
                           top: `${highlight.y}px`,

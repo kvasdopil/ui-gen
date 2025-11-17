@@ -253,6 +253,7 @@ This file contains important technical notes, decisions, and gotchas for future 
     - Clicking on overlay highlights starts arrow creation (calls `onOverlayClick`)
     - Screen drag handler checks for overlay clicks and skips dragging if click is on overlay
     - Prevents screen dragging when clicking on touchable elements - allows link creation instead
+    - **Tooltip on Hover**: Each overlay div has a `title` attribute set to the `touchableId`, showing a native browser tooltip when hovering over highlighted touchables
   - **Arrow Creation**: Arrow drawing from touchable overlays
     - `handleOverlayClick` sets `arrowLine` state and `isMouseDownRef.current = true` to enable mouse move tracking
     - Global window event listeners (`mousemove`, `mouseup`) attached when `arrowLine` exists to continue drawing even when mouse leaves viewport
@@ -418,7 +419,7 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **UI Generation**: `src/lib/ui-generation.ts`
   - Extracted reusable function `generateUIFromHistory()`
   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
-  - Uses Vercel AI Gateway with `xai/grok-4-fast-non-reasoning` model via `@ai-sdk/gateway`
+  - Uses Vercel AI Gateway with `xai/grok-4-fast-reasoning` model via `@ai-sdk/gateway`
   - Authentication: Uses OIDC token from `VERCEL_OIDC_TOKEN` environment variable (automatically obtained via `vercel env pull`)
   - Temperature: 0.5 (balanced creativity/consistency)
   - Provides `findUnsplashImage` tool for automatic image search

@@ -8,7 +8,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 👤 **User Profile**: User avatar in top-right corner with profile menu showing name, email, and logout option
 - 🔒 **Protected API**: UI generation endpoint requires authenticated users
 - 🔄 **Auth Flow Preservation**: If you try to create or modify a screen without being authenticated, your prompt is automatically saved and restored after you sign in
-- 🤖 **AI-Powered Generation**: Uses Vercel AI Gateway with xAI Grok-4-fast-non-reasoning model (via Vercel AI SDK) to generate UI mockups from natural language prompts
+- 🤖 **AI-Powered Generation**: Uses Vercel AI Gateway with xAI Grok-4-fast-reasoning model (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
 - 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
@@ -43,7 +43,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 🚫 **Non-Interactive Screens**: Screen contents (iframe and overlays) are always non-interactive to prevent accidental clicks while navigating
 - 🖱️ **Double-Click to Activate**: Double-click any screen to activate it, center the camera, and zoom to 100%
 - 🏷️ **Screen Titles**: Each generated screen displays a descriptive title above it, extracted from HTML metadata
-- 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title
+- 🎯 **Clickable Highlights**: Toggle visibility of interactive elements - highlights `<a>` links in magenta and `<button>` elements in cyan with a toggle button next to the screen title; hovering over highlighted touchables shows their ID in a tooltip
 - ➡️ **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays (when "show clickables" is enabled) and dragging to another screen - arrows use Bezier curves that connect screen boundaries and scale with zoom; clicking on touchable overlays starts link creation instead of dragging the screen
 - ➕ **Pending Arrow Button**: When dragging a link/button and dropping it in empty space, a rectangular button with rounded corners appears at the end of the arrow - the button displays the icon on top and the touchable ID as a label below; clicking it creates a cloned screen with full conversation history and automatically generates a new screen based on the button's purpose; only one pending button exists at a time; the touchable remains unlinked until the button is clicked
 - 💾 **Persistent Arrows**: Arrows are stored in the database as JSON in `DialogEntry.arrows` field - each arrow is identified by touchable ID (aria-roledescription) and contains target screen ID, automatically saved when completed and restored on page reload; invalid arrows (pointing to deleted screens) are automatically filtered out and removed from the database
@@ -104,6 +104,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want to** see a descriptive title above each screen, **so that** I can quickly identify different screens at a glance
 - **As a** user, **I want** my camera position and zoom level to be saved, **so that** I can continue from where I left off when I reload the page
 - **As a** user, **I want to** toggle visibility of clickable elements (links and buttons) in generated designs, **so that** I can easily identify interactive elements
+- **As a** user, **I want to** see the touchable ID in a tooltip when hovering over highlighted touchables, **so that** I can identify which element I'm about to connect
 - **As a** user, **I want to** create visual connections between screens by clicking on clickable overlays and dragging to other screens, **so that** I can document relationships and user flows between different screens
 - **As a** user, **I want** arrows to be automatically saved with my conversation history, **so that** my screen connections persist across page reloads
 - **As a** user, **I want** arrows to be associated with specific conversation points, **so that** each version of a screen can have its own set of connections
@@ -200,7 +201,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Vercel AI Gateway (`@ai-sdk/gateway`)
-  - xAI Grok-4-fast-non-reasoning model
+  - xAI Grok-4-fast-reasoning model
 - **Database**:
   - Neon PostgreSQL - Server-side persistence for screens and dialog entries
   - Prisma ORM - Database access and migrations
@@ -502,32 +503,33 @@ yarn dev
 ### Creating Arrow Connections
 
 1. **Enable Clickable Highlights**: Click the hand icon next to a screen's title to show clickable overlays
-2. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow - this will NOT drag the screen, it will start link creation instead
-3. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor and remain visible even when you move the mouse outside the screen boundaries
-4. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
-5. **Create New Screen from Pending Arrow**: Release the mouse button in empty space to show a rectangular button with rounded corners at the end of the arrow - the button displays the icon on top and the touchable ID as a label below; clicking this button will:
+2. **Hover to See ID**: Hover over any highlighted touchable overlay to see its touchable ID in a tooltip
+3. **Start Arrow**: Click on any highlighted clickable overlay (link or button) to start creating an arrow - this will NOT drag the screen, it will start link creation instead
+4. **Connect to Screen**: Drag from the overlay to another screen - the arrow will follow your cursor and remain visible even when you move the mouse outside the screen boundaries
+5. **Complete Connection**: Release the mouse button over another screen to connect the arrow (the arrow tip will snap to the destination screen boundary)
+6. **Create New Screen from Pending Arrow**: Release the mouse button in empty space to show a rectangular button with rounded corners at the end of the arrow - the button displays the icon on top and the touchable ID as a label below; clicking this button will:
    - Clone the original screen with all conversation points up to and including the active one
    - Create a new screen at the button location
    - Add a new dialog entry with prompt: "Create a screen that should be shown after user presses at '{button name}'" (where button name comes from the aria-roledescription attribute)
    - Automatically start HTML generation for the new screen
    - Update the arrow in the original screen to point to the newly created cloned screen
    - The button shows a spinner and is disabled during cloning to prevent double submissions
-6. **Cancel**: Click on the viewport, a screen, or empty space (but not on the button) to dismiss a pending arrow; dragging from another touchable also removes the previous pending arrow
-7. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
-8. **One Arrow Per Touchable**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
-9. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
-10. **Efficient Persistence**: Arrows are only saved to the server when you complete or remove them (on mouse release) - no server updates while dragging
-11. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
-12. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
-13. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
-14. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
-15. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
-16. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
-17. **Touchable ID**: Arrows are identified by touchable ID (aria-roledescription attribute) rather than index, ensuring stable identification even when elements change
-18. **Single Pending Button**: Only one pending arrow button (CreateFromTouchableButton) exists at a time - starting a new arrow from another touchable automatically removes the previous pending arrow
-19. **Unlinked Until Clicked**: Touchables with pending arrows are considered unlinked until the button is clicked - the arrow is only saved to the database when the button is clicked or when dropped on a screen
-20. **Arrow Color Coding**: Arrows connected to the selected screen (either as start or end) are displayed in dark gray (#6b7280), while all other arrows are shown in lighter gray (#d1d5db) for better visual hierarchy
-21. **Invalid Arrow Cleanup**: Arrows pointing to deleted or non-existent screens are automatically filtered out when loading screens and removed from the database to maintain data integrity
+7. **Cancel**: Click on the viewport, a screen, or empty space (but not on the button) to dismiss a pending arrow; dragging from another touchable also removes the previous pending arrow
+8. **Robust Arrow Drawing**: Arrow drawing continues smoothly even when the mouse moves quickly and leaves the viewport boundaries - uses global window event listeners to ensure the arrow only terminates on actual mouse release, not on mouse leave events
+9. **One Arrow Per Touchable**: Each clickable overlay can only have one outgoing arrow - creating a new arrow from the same overlay replaces the previous one
+10. **Persistent Arrows**: Arrows are automatically saved to the database when you complete the connection (release mouse over a screen) - stored as JSON in the `DialogEntry.arrows` field, persisted per conversation point
+11. **Efficient Persistence**: Arrows are only saved to the server when you complete or remove them (on mouse release) - no server updates while dragging
+12. **Per-Conversation-Point**: Arrows are stored with each conversation point, so different versions of a screen can have different arrow connections
+13. **Move with Screens**: Arrows remain visible after creation and move with screens when you drag them
+14. **Scalable**: Arrows scale with zoom and maintain consistent curvature at all zoom levels
+15. **Bezier Curves**: Arrows use smooth Bezier curves that connect screen boundaries perpendicularly
+16. **Dynamic Height Support**: Arrow boundary detection automatically adapts to screens taller than 844px for accurate connections
+17. **No Screen Dragging**: When clicking on touchable overlays, the screen will not be dragged - only link creation will start
+18. **Touchable ID**: Arrows are identified by touchable ID (aria-roledescription attribute) rather than index, ensuring stable identification even when elements change
+19. **Single Pending Button**: Only one pending arrow button (CreateFromTouchableButton) exists at a time - starting a new arrow from another touchable automatically removes the previous pending arrow
+20. **Unlinked Until Clicked**: Touchables with pending arrows are considered unlinked until the button is clicked - the arrow is only saved to the database when the button is clicked or when dropped on a screen
+21. **Arrow Color Coding**: Arrows connected to the selected screen (either as start or end) are displayed in dark gray (#6b7280), while all other arrows are shown in lighter gray (#d1d5db) for better visual hierarchy
+22. **Invalid Arrow Cleanup**: Arrows pointing to deleted or non-existent screens are automatically filtered out when loading screens and removed from the database to maintain data integrity
 
 ### Example Prompts
 
@@ -628,7 +630,7 @@ All endpoints require authentication (OAuth user session).
 
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats conversation history from all dialog entries for the LLM
-- Uses Vercel AI Gateway with `xai/grok-4-fast-non-reasoning` model (via `@ai-sdk/gateway`)
+- Uses Vercel AI Gateway with `xai/grok-4-fast-reasoning` model (via `@ai-sdk/gateway`)
 - Authentication via OIDC token (`VERCEL_OIDC_TOKEN` environment variable)
 - Supports multi-turn interactions and tool calls
 - Provides `findUnsplashImage` tool for automatic image search
@@ -718,6 +720,7 @@ All endpoints require authentication (OAuth user session).
     - Overlay layer positioned absolutely over iframe without modifying generated content
     - Uses `offsetLeft`/`offsetTop` to calculate positions relative to iframe document (not affected by CSS transforms)
     - State is not persisted (resets on page reload)
+    - **Tooltip on Hover**: Hovering over highlighted touchables shows their touchable ID (aria-roledescription) in a native browser tooltip
     - Highlights are non-interactive (cannot be clicked)
   - **Arrow Connections**: Create visual connections between screens by clicking on clickable overlays
     - Click any highlighted overlay to start an arrow from its center
@@ -902,7 +905,7 @@ Set these in Vercel project settings:
 
 The UI generation uses:
 
-- Model: `xai/grok-4-fast-non-reasoning` (via Vercel AI Gateway)
+- Model: `xai/grok-4-fast-reasoning` (via Vercel AI Gateway)
 - Temperature: `0.5` (balanced creativity/consistency)
 - Authentication: OIDC token via `VERCEL_OIDC_TOKEN` environment variable
 

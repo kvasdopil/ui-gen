@@ -121,7 +121,7 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
     // OIDC token is automatically read from VERCEL_OIDC_TOKEN env var
     // No need to explicitly pass it - the gateway provider will use it automatically
   });
-  const model = gatewayProvider("xai/grok-4-fast-non-reasoning");
+  const model = gatewayProvider("xai/grok-4-fast-reasoning");
 
   // Define the Unsplash image search tool
   const findUnsplashImageTool = tool({
