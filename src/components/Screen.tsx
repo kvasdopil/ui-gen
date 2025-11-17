@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { FaSpinner } from "react-icons/fa";
+import { FaSpinner, FaMagic } from "react-icons/fa";
 import { TbHandClick } from "react-icons/tb";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -310,6 +310,27 @@ export default function Screen({
 
   const currentError = getCurrentError();
   const showError = currentError !== null && !isLoading;
+
+  // Find the point index for the error to enable retry
+  const getErrorPointIndex = (): number | null => {
+    if (!errorTimestamp) return null;
+    const index = conversationPoints.findIndex(
+      (point) => point.timestamp === errorTimestamp && !point.html,
+    );
+    return index >= 0 ? index : null;
+  };
+
+  const errorPointIndex = getErrorPointIndex();
+
+  // Handle retry from error screen
+  const handleRetryFromError = () => {
+    if (errorPointIndex !== null) {
+      const point = conversationPoints[errorPointIndex];
+      if (point && point.prompt) {
+        handleSend(point.prompt, point.timestamp);
+      }
+    }
+  };
 
   // Listen for height messages from iframe
   useEffect(() => {
@@ -908,12 +929,6 @@ export default function Screen({
             onPromptSelect={handlePromptSelect}
             onDeletePoint={handleDeletePoint}
             onClone={(pointIndex) => onClone(id, pointIndex)}
-            onRetry={(pointIndex) => {
-              const point = conversationPoints[pointIndex];
-              if (point && point.prompt) {
-                handleSend(point.prompt, point.timestamp);
-              }
-            }}
             screenName={screenTitle}
             screenId={id}
             getHtmlForPoint={(pointIndex) => {
@@ -973,6 +988,17 @@ export default function Screen({
                     <p className="text-muted-foreground max-w-[320px] text-center text-xs">
                       Prompt: {currentPrompt}
                     </p>
+                  )}
+                  {errorPointIndex !== null && (
+                    <Button
+                      onClick={handleRetryFromError}
+                      variant="outline"
+                      className="mt-2"
+                      disabled={isLoading}
+                    >
+                      <FaMagic className="mr-2 h-4 w-4" />
+                      Retry
+                    </Button>
                   )}
                 </div>
               ) : (

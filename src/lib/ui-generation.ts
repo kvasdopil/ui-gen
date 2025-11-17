@@ -114,14 +114,14 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       `Based on the above conversation history, please generate a new UI that addresses the user's latest request: "${lastUserMessage.content}"`
     : conversationPrompt;
 
-  // Initialize model using Vercel AI Gateway with xAI Grok model
+  // Initialize model using Vercel AI Gateway with Google Gemini model
   // Vercel AI Gateway uses OIDC token authentication (VERCEL_OIDC_TOKEN)
   // The token is automatically used if available in environment variables
   const gatewayProvider = createGatewayProvider({
     // OIDC token is automatically read from VERCEL_OIDC_TOKEN env var
     // No need to explicitly pass it - the gateway provider will use it automatically
   });
-  const model = gatewayProvider("xai/grok-4-fast-reasoning");
+  const model = gatewayProvider("google/gemini-2.5-flash");
 
   // Define the Unsplash image search tool
   const findUnsplashImageTool = tool({
@@ -158,7 +158,10 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
 
   // Generate HTML using Vercel AI SDK with conversation history and tools
   let text: string;
+  const requestStartTime = Date.now();
+  
   try {
+    const generateStartTime = Date.now();
     const result = await generateText({
       model,
       system: systemPrompt,
@@ -168,10 +171,29 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
         findUnsplashImage: findUnsplashImageTool,
       },
     });
+    const generateEndTime = Date.now();
+    const totalTime = generateEndTime - generateStartTime;
+    
     text = result.text;
+    
+    // Extract timing information
+    const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
+    const usage = (result as any).usage || {};
+    
+    // Log timing metrics
+    console.log("[UI Generation] Timing Metrics:", {
+      totalTimeMs: totalTime,
+      totalTimeSec: (totalTime / 1000).toFixed(2),
+      thinkingTimeMs: thinkingTime,
+      thinkingTimeSec: thinkingTime ? (thinkingTime / 1000).toFixed(2) : null,
+      promptTokens: usage.promptTokens || "N/A",
+      completionTokens: usage.completionTokens || "N/A",
+      totalTokens: usage.totalTokens || "N/A",
+    });
   } catch (error) {
     // If tool call fails, retry without tools to allow generation to continue
     console.error("Error during generation with tools, retrying without tools:", error);
+    const generateStartTime = Date.now();
     const result = await generateText({
       model,
       system: systemPrompt,
@@ -179,8 +201,33 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       temperature: 0.5,
       // Retry without tools to allow generation to complete
     });
+    const generateEndTime = Date.now();
+    const totalTime = generateEndTime - generateStartTime;
+    
     text = result.text;
+    
+    // Extract timing information
+    const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
+    const usage = (result as any).usage || {};
+    
+    // Log timing metrics
+    console.log("[UI Generation] Timing Metrics (retry without tools):", {
+      totalTimeMs: totalTime,
+      totalTimeSec: (totalTime / 1000).toFixed(2),
+      thinkingTimeMs: thinkingTime,
+      thinkingTimeSec: thinkingTime ? (thinkingTime / 1000).toFixed(2) : null,
+      promptTokens: usage.promptTokens || "N/A",
+      completionTokens: usage.completionTokens || "N/A",
+      totalTokens: usage.totalTokens || "N/A",
+    });
   }
+  
+  const requestEndTime = Date.now();
+  const totalRequestTime = requestEndTime - requestStartTime;
+  console.log("[UI Generation] Total Request Time:", {
+    totalRequestTimeMs: totalRequestTime,
+    totalRequestTimeSec: (totalRequestTime / 1000).toFixed(2),
+  });
 
   // Clean up the generated HTML - remove markdown code block markers
   let cleanedHtml = text.trim();

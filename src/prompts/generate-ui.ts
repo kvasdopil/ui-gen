@@ -19,10 +19,16 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
 - Use only standard HTML elements (\`div\`, \`img\`, \`p\`, \`h1\`, \`h2\`, \`h3\`, \`span\`, \`ul\`, \`li\`, \`a\`, \`button\`, etc.)
 - **Layout Elements**: Use only \`div\` elements for layout containers - do NOT use semantic HTML tags like \`header\`, \`section\`, \`main\`, or \`footer\`
 - **Interactive Elements**: Use semantic HTML for clickable elements:
-  - **Navigation**: Clickable elements that initiate navigation should use \`<a>\` tags with \`href="#"\` (e.g., links to other pages, navigation items, menu items that navigate)
-  - **Actions**: Clickable elements that initiate actions should use \`<button>\` tags (e.g., submit buttons, action buttons, toggle buttons, delete buttons, etc.)
+  - **Navigation**: Touchables that navigate to a new screen should use \`<a>\` tags with \`href="#"\` (e.g., links to other pages, navigation items, menu items that navigate, list items that open detail pages)
+  - **Actions**: Touchables that initiate action on the same page should use \`<button>\` tags (e.g., submit buttons, action buttons, toggle buttons, delete buttons, etc.)
   - Do NOT use \`div\` elements with \`cursor-pointer\` for interactive elements - use proper semantic HTML (\`<a>\` or \`<button>\`)
   - **aria-roledescription**: ALL \`<a>\` and \`<button>\` tags MUST include an \`aria-roledescription\` attribute with a human-readable, globally unique name that describes the element's role. Each \`aria-roledescription\` value must be unique across the entire page (e.g., \`aria-roledescription="home navigation link"\`, \`aria-roledescription="submit form button"\`, \`aria-roledescription="close dialog button"\`). Make each description specific and descriptive enough to be globally unique.
+  - **IDs for Repeating Elements**: When generating \`aria-roledescription\` values for touchables that are repeating elements (e.g., items in a list, table rows, calendar events), use generic, reusable IDs rather than specific ones. For example:
+    - ✅ GOOD: \`aria-roledescription="calendar event link"\` (for a repeating calendar event item)
+    - ❌ BAD: \`aria-roledescription="meeting with sarah link"\` (too specific for a repeating element)
+    - ✅ GOOD: \`aria-roledescription="product card link"\` (for a repeating product in a list)
+    - ❌ BAD: \`aria-roledescription="blue t-shirt link"\` (too specific for a repeating element)
+  - **Making List Items Clickable**: Always try to make list items clickable if that makes sense from UI logic. It's okay to only make one item in the list clickable as an example, unless different items go to different pages or variants of the same page (in which case, make all relevant items clickable).
 - Apply styling exclusively through Tailwind CSS classes
 - No inline styles except for fixed dimensions when necessary
 - **Root Element**: The root element must be a \`div\` with classes \`flex h-full w-full\`
@@ -56,7 +62,7 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
 
 - **Touch Targets**: All touchable/interactive-looking elements must be large enough for mobile interaction - minimum 44px × 44px touch target size
 - **Scrolling**: Use appropriate scrolling behavior for mobile devices - use \`overflow-y-auto\` or \`overflow-x-auto\` classes where content exceeds the viewport
-- **Semantic HTML for Interactions**: Use \`<a href="#">\` for navigation elements and \`<button>\` for action elements - these provide proper semantic meaning and accessibility
+- **Semantic HTML for Interactions**: Touchables that navigate to a new screen should use \`<a href="#">\` tags, and touchables that initiate action on the same page should use \`<button>\` tags - these provide proper semantic meaning and accessibility
 - **Mobile Considerations**: Consider all mobile phone implications - one-handed use, thumb reach zones, gesture-friendly spacing, and mobile-optimized layouts
 
 ### Output Format
@@ -133,10 +139,16 @@ Generate a beautiful, non-interactive UI mockup using HTML and Tailwind CSS that
 - Use Font Awesome icons ONLY for all icon needs - use \`<i>\` tags with Font Awesome classes (e.g., \`fas fa-home\`, \`far fa-user\`, \`fab fa-twitter\`). NEVER generate custom SVG icons or embed SVG code directly. The Font Awesome CDN will be automatically included.
 - Use Unsplash images for image mockups - select relevant, high-quality images that fit the context
 - **Semantic HTML for Interactive Elements**: 
-  - Use \`<a href="#">\` for clickable elements that initiate navigation (links, menu items, navigation buttons)
-  - Use \`<button>\` for clickable elements that initiate actions (submit, delete, toggle, etc.)
+  - **Navigation**: Touchables that navigate to a new screen should use \`<a href="#">\` tags (links, menu items, navigation buttons, list items that open detail pages)
+  - **Actions**: Touchables that initiate action on the same page should use \`<button>\` tags (submit, delete, toggle, etc.)
   - Do NOT use \`div\` elements with \`cursor-pointer\` for interactive elements - always use proper semantic HTML
   - **REQUIRED**: ALL \`<a>\` and \`<button>\` tags MUST include an \`aria-roledescription\` attribute with a human-readable, globally unique name. Each value must be unique across the entire page (e.g., \`aria-roledescription="home navigation link"\`, \`aria-roledescription="submit form button"\`, \`aria-roledescription="close dialog button"\`). Make each description specific and descriptive enough to be globally unique.
+  - **IDs for Repeating Elements**: When generating \`aria-roledescription\` values for touchables that are repeating elements (e.g., items in a list, table rows, calendar events), use generic, reusable IDs rather than specific ones:
+    - ✅ GOOD: \`aria-roledescription="calendar event link"\` (for a repeating calendar event item)
+    - ❌ BAD: \`aria-roledescription="meeting with sarah link"\` (too specific for a repeating element)
+    - ✅ GOOD: \`aria-roledescription="product card link"\` (for a repeating product in a list)
+    - ❌ BAD: \`aria-roledescription="blue t-shirt link"\` (too specific for a repeating element)
+  - **Making List Items Clickable**: Always try to make list items clickable if that makes sense from UI logic. It's okay to only make one item in the list clickable as an example, unless different items go to different pages or variants of the same page (in which case, make all relevant items clickable).
 - **Accessibility Best Practices**: Always add \`aria-label\` attributes to key elements, but remember:
   - **Purpose over duplication**: aria-labels should describe the element's purpose and provide context, not just repeat visible text. For example, use \`aria-label="Close dialog"\` not \`aria-label="X"\`, or \`aria-label="list of users"\` not just \`aria-label="list"\`
   - **Meaningful context**: Describe what the element does or contains, helping screen reader users understand its role in the interface

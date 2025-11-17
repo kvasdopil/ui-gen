@@ -347,6 +347,29 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Loading states are cleared in finally blocks and on early returns (errors, auth redirects)
 - **Location**: `src/app/page.tsx`, `src/components/NewScreenDialog.tsx`
 
+### 26. Workspace Download Feature
+
+- **Decision**: Add download button to workspace header that exports all screens as HTML files in a ZIP archive
+- **Reason**: Allows users to export and share their designs offline, archive workspaces, or use generated HTML in other projects
+- **Implementation**:
+  - Download button appears only on hover over workspace header (opacity transition with `group-hover:opacity-100`)
+  - Uses JSZip library (`jszip` package) to create ZIP files in the browser
+  - Exports each screen's selected conversation point (or last one if none selected) as a separate HTML file
+  - File names derived from screen titles, converted to kebab-case using `toKebabCase()` helper function
+  - Handles duplicate file names by appending numeric suffixes (e.g., "my-screen.html", "my-screen-1.html")
+  - HTML processing:
+    - Wraps each screen's HTML with Tailwind CSS and Font Awesome CDN links (same as preview)
+    - Removes links by converting `<a>` tags to `<span>` tags (href attributes removed) since navigation isn't exported yet
+    - Uses DOMParser to process HTML and replace link elements
+  - ZIP file named after workspace (kebab-case) with `.zip` extension
+  - Skips screens without conversation points or HTML content
+  - Download handler in `src/app/ws/[id]/page.tsx`:
+    - `handleDownload()` callback function processes all screens
+    - `wrapHtmlWithTailwindAndRemoveLinks()` helper function processes HTML
+    - `toKebabCase()` helper function converts screen names to file-safe format
+  - WorkspaceHeader component receives `onDownload` prop and conditionally renders download button
+- **Location**: `src/components/WorkspaceHeader.tsx`, `src/app/ws/[id]/page.tsx`
+
 ### 22. Root Page Authentication Check
 
 - **Decision**: Root page (`/`) checks authentication before redirecting to `/files`
@@ -426,7 +449,8 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **UI Generation**: `src/lib/ui-generation.ts`
   - Extracted reusable function `generateUIFromHistory()`
   - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as system prompt
-  - Uses Vercel AI Gateway with `xai/grok-4-fast-reasoning` model via `@ai-sdk/gateway`
+  - Uses Vercel AI Gateway with `google/gemini-2.5-flash` model via `@ai-sdk/gateway`
+  - Includes timing measurements: total generation time, thinking time (if available), and token usage metrics
   - Authentication: Uses OIDC token from `VERCEL_OIDC_TOKEN` environment variable (automatically obtained via `vercel env pull`)
   - Temperature: 0.5 (balanced creativity/consistency)
   - Provides `findUnsplashImage` tool for automatic image search
@@ -436,7 +460,7 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Cleans markdown code blocks from response
   - Returns HTML with title metadata comment (`<!-- Title: ... -->`)
   - **Error Handling**: Displays error messages instead of loading placeholder when generation fails
-  - **Retry Support**: Users can retry failed generations via the "Retry" option in the PromptPanel menu
+  - **Retry Support**: Users can retry failed generations via a "Retry" button directly on the error screen (moved from PromptPanel menu for better visibility)
 
 - **Deprecated**: `src/app/api/create/route.ts`
   - Kept for backward compatibility
@@ -540,6 +564,18 @@ This file contains important technical notes, decisions, and gotchas for future 
   - This value is used as `touchableId` to identify arrows/links between screens
   - Each `aria-roledescription` value must be unique across the entire page
   - Elements without `aria-roledescription` are skipped when creating highlights and cannot be used for arrow creation
+- **Element Type Selection**:
+  - Touchables that navigate to a new screen should use `<a>` tags
+  - Touchables that initiate action on the same page should use `<button>` tags
+- **IDs for Repeating Elements**:
+  - When generating `aria-roledescription` values for touchables that are repeating elements (e.g., items in a list, table rows, calendar events), use generic, reusable IDs rather than specific ones
+  - ✅ Good: `aria-roledescription="calendar event link"` (for a repeating calendar event item)
+  - ❌ Bad: `aria-roledescription="meeting with sarah link"` (too specific for a repeating element)
+  - ✅ Good: `aria-roledescription="product card link"` (for a repeating product in a list)
+  - ❌ Bad: `aria-roledescription="blue t-shirt link"` (too specific for a repeating element)
+- **Making List Items Clickable**:
+  - Always try to make list items clickable if that makes sense from UI logic
+  - It's okay to only make one item in the list clickable as an example, unless different items go to different pages or variants of the same page (in which case, make all relevant items clickable)
 
 ## Known Issues & Workarounds
 
@@ -668,3 +704,10 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Files page (`/files`): "Workspaces - UI Generator"
   - Workspace page (`/ws/:id`): "{workspace name} - UI Generator" (updates when workspace name changes, shows "Untitled workspace" if name is empty)
   - Location: `src/app/files/page.tsx`, `src/app/ws/[id]/page.tsx`
+- WorkspaceHeader component: `src/components/WorkspaceHeader.tsx`
+  - Fixed position in top-left corner (z-index 9999) with workspace name and back navigation
+  - Back button is a Next.js Link component (not a button) so users can see the destination URL on hover
+  - Navigates to `/files` page when clicked
+  - Includes EditableTitle component for in-place workspace name editing
+  - Download button appears on hover (opacity transition) and exports workspace as ZIP file
+  - Prevents event propagation to avoid interfering with viewport interactions

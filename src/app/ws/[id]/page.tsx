@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
+import JSZip from "jszip";
 import Screen from "@/components/Screen";
 import UserAvatar from "@/components/UserAvatar";
 import WorkspaceHeader from "@/components/WorkspaceHeader";
@@ -1080,6 +1081,126 @@ export default function WorkspacePage() {
     [screens],
   );
 
+  // Helper function to convert string to kebab case
+  const toKebabCase = (str: string): string => {
+    return str
+      .replace(/([a-z])([A-Z])/g, "$1-$2")
+      .replace(/[\s_]+/g, "-")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  };
+
+  // Helper function to wrap HTML with Tailwind and remove links
+  const wrapHtmlWithTailwindAndRemoveLinks = (html: string): string => {
+    // Remove links by converting <a> tags to <span> tags
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const links = doc.querySelectorAll("a[href]");
+    links.forEach((link) => {
+      const span = doc.createElement("span");
+      // Copy all attributes except href
+      Array.from(link.attributes).forEach((attr) => {
+        if (attr.name !== "href") {
+          span.setAttribute(attr.name, attr.value);
+        }
+      });
+      // Copy all child nodes
+      while (link.firstChild) {
+        span.appendChild(link.firstChild);
+      }
+      link.parentNode?.replaceChild(span, link);
+    });
+    const processedHtml = doc.body.innerHTML;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generated UI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; min-height: 844px; }
+    body > * { min-height: 844px; }
+  </style>
+</head>
+<body>
+  ${processedHtml}
+</body>
+</html>`;
+  };
+
+  // Handle workspace download
+  const handleDownload = useCallback(async () => {
+    if (screens.length === 0) {
+      console.warn("No screens to download");
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      const usedFileNames = new Set<string>();
+
+      // Process each screen
+      for (const screen of screens) {
+        // Get the selected conversation point or the last one
+        const conversationPointIndex =
+          screen.selectedPromptIndex !== null
+            ? screen.selectedPromptIndex
+            : screen.conversationPoints.length > 0
+              ? screen.conversationPoints.length - 1
+              : null;
+
+        if (conversationPointIndex === null || conversationPointIndex >= screen.conversationPoints.length) {
+          continue; // Skip screens without conversation points
+        }
+
+        const conversationPoint = screen.conversationPoints[conversationPointIndex];
+        if (!conversationPoint.html) {
+          continue; // Skip screens without HTML content
+        }
+
+        // Get screen name from title or use a default
+        const screenName = conversationPoint.title || "untitled-screen";
+        const baseFileName = toKebabCase(screenName);
+        let fileName = `${baseFileName}.html`;
+        let counter = 1;
+
+        // Ensure unique filename
+        while (usedFileNames.has(fileName)) {
+          fileName = `${baseFileName}-${counter}.html`;
+          counter++;
+        }
+        usedFileNames.add(fileName);
+
+        // Wrap HTML with Tailwind and remove links
+        const wrappedHtml = wrapHtmlWithTailwindAndRemoveLinks(conversationPoint.html);
+
+        // Add to zip
+        zip.file(fileName, wrappedHtml);
+      }
+
+      // Generate zip file
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+
+      // Create download link
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${toKebabCase(workspaceName || "workspace")}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading workspace:", error);
+    }
+  }, [screens, workspaceName]);
+
   // Handle overlay click - start arrow from center of clicked overlay
   const handleOverlayClick = useCallback(
     (center: { x: number; y: number }, screenId: string, touchableId: string, text: string) => {
@@ -1233,7 +1354,11 @@ export default function WorkspacePage() {
   return (
     <>
       <UserAvatar />
-      <WorkspaceHeader workspaceName={workspaceName} onNameUpdate={handleWorkspaceNameUpdate} />
+      <WorkspaceHeader
+        workspaceName={workspaceName}
+        onNameUpdate={handleWorkspaceNameUpdate}
+        onDownload={handleDownload}
+      />
       <Viewport
         ref={viewportHandleRef}
         disabled={!!draggedScreenId || (!!arrowLine && !arrowLine.isPending)}

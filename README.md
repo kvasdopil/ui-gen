@@ -1,6 +1,6 @@
 # UI Generator
 
-An AI-powered UI mockup generator that creates beautiful, non-interactive HTML interfaces using Vercel AI Gateway with xAI Grok and Tailwind CSS. Users can describe their desired UI in natural language, and the application generates a mobile-optimized (390px × 844px) HTML mockup rendered in an iframe.
+An AI-powered UI mockup generator that creates beautiful, non-interactive HTML interfaces using Vercel AI Gateway with Google Gemini and Tailwind CSS. Users can describe their desired UI in natural language, and the application generates a mobile-optimized (390px × 844px) HTML mockup rendered in an iframe.
 
 ## Features
 
@@ -8,17 +8,17 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - 👤 **User Profile**: User avatar in top-right corner with profile menu showing name, email, and logout option
 - 🔒 **Protected API**: UI generation endpoint requires authenticated users
 - 🔄 **Auth Flow Preservation**: If you try to create or modify a screen without being authenticated, your prompt is automatically saved and restored after you sign in
-- 🤖 **AI-Powered Generation**: Uses Vercel AI Gateway with xAI Grok-4-fast-reasoning model (via Vercel AI SDK) to generate UI mockups from natural language prompts
+- 🤖 **AI-Powered Generation**: Uses Vercel AI Gateway with Google Gemini 2.5 Flash model (via Vercel AI SDK) to generate UI mockups from natural language prompts
 - 📱 **Mobile-First Design**: Generates UIs optimized for mobile screens (iPhone 13/14 standard: 390px × 844px)
 - 🎨 **Tailwind CSS**: All generated UIs use Tailwind CSS for styling via CDN
 - 🎯 **Font Awesome Icons**: Generated UIs use Font Awesome icons via CDN for consistent, professional iconography
 - 🖼️ **Unsplash Image Integration**: AI can automatically search and include relevant images from Unsplash using the `findUnsplashImage` tool (with graceful fallback if tool calls fail)
 - 🔄 **Multi-Step Conversations**: Supports up to 5 conversation steps, allowing the AI to make tool calls and follow-up responses
-- ♿ **Accessibility**: Generated UIs include proper semantic HTML (`<a>` for navigation, `<button>` for actions) and aria-labels for screen reader support
+- ♿ **Accessibility**: Generated UIs include proper semantic HTML (touchables that navigate use `<a>` tags, touchables that initiate actions use `<button>` tags), generic IDs for repeating elements, and aria-labels for screen reader support
 - 🖼️ **Iframe Rendering**: Generated HTML is safely rendered in an isolated iframe
 - ⚡ **Real-time Generation**: Fast UI generation with loading states and error handling
 - 🔄 **Loading Placeholder**: Shows a placeholder screen with spinner, "Creating UI" text, and user prompt while UI is being generated
-- ❌ **Error Display**: Shows error messages instead of loading placeholder when generation fails, with retry option available
+- ❌ **Error Display**: Shows error messages instead of loading placeholder when generation fails, with retry button directly on the error screen
 - 🧹 **Clean Output**: Automatically strips markdown code blocks from AI responses
 - 🔄 **Follow-up Modifications**: Iteratively refine designs by modifying previous prompts with full conversation context
 - 📜 **Conversation History**: View all previous prompts in a history panel with the ability to modify and regenerate
@@ -59,7 +59,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - ➕ **Create New Workspaces**: Create new workspaces with auto-generated names (e.g., "Workspace 1", "Workspace 2") or custom names
 - 🗑️ **Delete Workspaces**: Delete any workspace including all its screens with a confirmation dialog
 - 🔄 **Workspace-Specific State**: Each workspace maintains its own screens and viewport transform (pan/zoom) state
-- ⬅️ **Navigation**: Arrow left icon in workspace header navigates back to the files page
+- ⬅️ **Navigation**: Arrow left icon in workspace header (as a link) navigates back to the files page - hover to see destination URL
+- 📥 **Workspace Export**: Download entire workspace as a ZIP file containing all screens as standalone HTML files - download button appears on hover in workspace header
 
 ## User Stories
 
@@ -174,6 +175,8 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **As a** user, **I want** the root path to redirect to the workspace selection screen, **so that** I can choose which workspace to open
 - **As a** user, **I want** new workspaces to have auto-generated names if I don't provide one, **so that** I can quickly create workspaces without naming them
 - **As a** user, **I want** to see a delete icon when hovering over a workspace card, **so that** I can easily delete workspaces without cluttering the interface
+- **As a** user, **I want** to download my entire workspace as a ZIP file with all screens as HTML files, **so that** I can share or archive my designs offline
+- **As a** user, **I want** the download button to only appear when I hover over the workspace header, **so that** the interface stays clean when I'm not using it
 
 ### Technical Requirements
 
@@ -201,7 +204,7 @@ An AI-powered UI mockup generator that creates beautiful, non-interactive HTML i
 - **AI Integration**:
   - Vercel AI SDK (`ai` package)
   - Vercel AI Gateway (`@ai-sdk/gateway`)
-  - xAI Grok-4-fast-reasoning model
+  - Google Gemini 2.5 Flash model
 - **Database**:
   - Neon PostgreSQL - Server-side persistence for screens and dialog entries
   - Prisma ORM - Database access and migrations
@@ -412,8 +415,14 @@ yarn dev
 4. **Select Workspace**: Click on any workspace card to open it and start working
 5. **Edit Workspace Name**: In a workspace, click on the workspace name in the top-left header to edit it in-place (Enter to save, Escape to cancel)
 6. **Delete Workspace**: Hover over a workspace card to reveal the delete icon, then click it and confirm deletion
-7. **Navigate Back**: Click the arrow left icon in the workspace header to return to the files page
-8. **Automatic Updates**: The workspace's last modification date is automatically updated whenever you create, modify, or delete screens or dialog entries
+7. **Navigate Back**: Click the arrow left icon (link) in the workspace header to return to the files page - hover to see the destination URL
+8. **Download Workspace**: Hover over the workspace header to reveal the download button, then click it to download all screens as a ZIP file
+   - Each screen's selected conversation point (or the last one if none selected) is exported as a separate HTML file
+   - File names are derived from screen titles, converted to kebab-case (e.g., "My Screen" becomes "my-screen.html")
+   - HTML files include Tailwind CSS and Font Awesome CDN links for standalone viewing
+   - Links are removed (converted to spans) since navigation isn't exported yet
+   - Duplicate file names are automatically handled with numeric suffixes
+9. **Automatic Updates**: The workspace's last modification date is automatically updated whenever you create, modify, or delete screens or dialog entries
 
 ### Initial Generation
 
@@ -465,7 +474,7 @@ yarn dev
 2. Hover over any entry in the history to reveal a menu button (three dots) on the right
 3. Click the menu button to open a dropdown menu with available actions
 4. **Keyboard Shortcut**: Press the Delete key when the latest conversation point is selected to quickly trigger the delete confirmation dialog (only works when not typing in an input field)
-5. **Retry Failed Generation**: If a conversation point has a prompt but no HTML (generation failed), a "Retry" option will appear in the menu for that entry - click it to retry the generation
+5. **Retry Failed Generation**: If a generation fails, a "Retry" button will appear directly on the error screen - click it to retry the generation
 6. **Export to Clipboard**: Click "Export to clipboard" on any entry to copy its HTML to your clipboard
    - The exported HTML includes a comment block at the top with all prompts used to generate that version
    - Prompt history is formatted as: `(prompt1)` separated by `--` between prompts
@@ -566,14 +575,22 @@ Generated HTML is rendered in an iframe for:
 Generated UIs include accessibility best practices:
 
 - **Semantic HTML**:
-  - Navigation elements use `<a href="#">` tags
-  - Action elements use `<button>` tags
+  - **Navigation**: Touchables that navigate to a new screen use `<a href="#">` tags (e.g., links to other pages, navigation items, list items that open detail pages)
+  - **Actions**: Touchables that initiate action on the same page use `<button>` tags (e.g., submit buttons, action buttons, toggle buttons, delete buttons)
   - Prevents use of non-semantic `<div>` elements for interactive content
 - **ARIA Labels**:
   - Key UI elements include descriptive `aria-label` attributes
   - Labels describe element purpose and context, not just duplicate visible text
   - Examples: `aria-label="list of users"`, `aria-label="main keyboard"`, `aria-label="Close dialog"`
   - Applied to lists, navigation elements, button groups, content sections, and interactive elements without descriptive visible text
+- **Touchable IDs for Repeating Elements**:
+  - When generating `aria-roledescription` values for touchables that are repeating elements (e.g., items in a list, table rows, calendar events), the AI uses generic, reusable IDs rather than specific ones
+  - ✅ Good: `aria-roledescription="calendar event link"` (for a repeating calendar event item)
+  - ❌ Bad: `aria-roledescription="meeting with sarah link"` (too specific for a repeating element)
+  - This ensures consistent identification across similar elements and makes it easier to create connections between screens
+- **Making List Items Clickable**:
+  - The AI always tries to make list items clickable if that makes sense from UI logic
+  - It's acceptable to only make one item in the list clickable as an example, unless different items go to different pages or variants of the same page (in which case, all relevant items are made clickable)
 - **Screen Reader Support**: Proper semantic structure and labels enable screen readers to properly interpret and navigate the generated interfaces
 
 ### API Design
@@ -630,7 +647,7 @@ All endpoints require authentication (OAuth user session).
 
 - Uses `GENERATE_UI_PROMPT` constant from `src/prompts/generate-ui.ts` as the system prompt
 - Formats conversation history from all dialog entries for the LLM
-- Uses Vercel AI Gateway with `xai/grok-4-fast-reasoning` model (via `@ai-sdk/gateway`)
+- Uses Vercel AI Gateway with `google/gemini-2.5-flash` model (via `@ai-sdk/gateway`)
 - Authentication via OIDC token (`VERCEL_OIDC_TOKEN` environment variable)
 - Supports multi-turn interactions and tool calls
 - Provides `findUnsplashImage` tool for automatic image search
@@ -639,7 +656,7 @@ All endpoints require authentication (OAuth user session).
 - Cleans up markdown code blocks from AI responses
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`)
 - Error handling: Displays error messages instead of loading placeholder when generation fails
-- Retry support: Users can retry failed generations via the "Retry" option in the PromptPanel menu
+- Retry support: Users can retry failed generations via a "Retry" button directly on the error screen
 
 ### Authentication & User Management
 
@@ -905,7 +922,7 @@ Set these in Vercel project settings:
 
 The UI generation uses:
 
-- Model: `xai/grok-4-fast-reasoning` (via Vercel AI Gateway)
+- Model: `google/gemini-2.5-flash` (via Vercel AI Gateway)
 - Temperature: `0.5` (balanced creativity/consistency)
 - Authentication: OIDC token via `VERCEL_OIDC_TOKEN` environment variable
 
