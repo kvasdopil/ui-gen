@@ -695,7 +695,15 @@ All endpoints require authentication (OAuth user session).
 
 ### Component Structure
 
-- **page.tsx**: Main viewport component managing multiple screens, pan/zoom, selection, and dragging
+- **page.tsx**: Main workspace page component that composes custom hooks for all functionality
+  - Uses `useWorkspace` for workspace management
+  - Uses `useScreens` for screen state and CRUD operations
+  - Uses `useScreenCreation` for new screen creation flows
+  - Uses `useScreenDragging` for screen dragging logic
+  - Uses `useArrowDrawing` for arrow connections
+  - Uses `useViewportHelpers` for viewport utilities
+  - Uses `useWorkspaceDownload` for export functionality
+  - Focuses on composition and JSX rendering, with business logic extracted to hooks
   - Handles screen deletion via `handleScreenDelete` which calls `storage.deleteScreen()` to persist deletions to database
   - Manages viewport transform state (pan position and zoom scale)
   - Uses refs to prevent rerenders during zoom operations for smooth performance
@@ -810,7 +818,7 @@ All endpoints require authentication (OAuth user session).
   - All entries maintain consistent width (space reserved for menu button)
   - All dropdown menu items have cursor pointer styling
 
-- Separation of concerns: UI generation logic in API route, rendering in components, viewport management in page component, persistence in storage abstraction
+- Separation of concerns: UI generation logic in API route, rendering in components, business logic in custom hooks, viewport management composed from hooks, persistence in storage abstraction
 
 ## Development
 

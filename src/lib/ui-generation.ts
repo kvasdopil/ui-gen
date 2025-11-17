@@ -180,11 +180,15 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
     
     text = result.text;
     // Extract finish reason from result (available in AI SDK)
-    finishReason = (result as any).finishReason || (result as any).finishReasonType || null;
+    finishReason = result.finishReason || null;
     
-    // Extract timing information
-    const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
-    const usage = (result as any).usage || {};
+    // Extract timing information (may be in providerMetadata for some providers)
+    const resultWithMetadata = result as typeof result & {
+      thinkingTime?: number;
+      reasoningTime?: number;
+    };
+    const thinkingTime = resultWithMetadata.thinkingTime || resultWithMetadata.reasoningTime || null;
+    const usage = result.usage || { inputTokens: undefined, outputTokens: undefined, totalTokens: undefined };
     
     // Log timing metrics and finish reason
     console.log("[UI Generation] Timing Metrics:", {
@@ -192,9 +196,9 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
       totalTimeSec: (totalTime / 1000).toFixed(2),
       thinkingTimeMs: thinkingTime,
       thinkingTimeSec: thinkingTime ? (thinkingTime / 1000).toFixed(2) : null,
-      promptTokens: usage.promptTokens || "N/A",
-      completionTokens: usage.completionTokens || "N/A",
-      totalTokens: usage.totalTokens || "N/A",
+      promptTokens: usage.inputTokens ?? "N/A",
+      completionTokens: usage.outputTokens ?? "N/A",
+      totalTokens: usage.totalTokens ?? "N/A",
       finishReason: finishReason || "N/A",
     });
   } catch (error) {
@@ -213,11 +217,15 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
     
     text = result.text;
     // Extract finish reason from result (available in AI SDK)
-    finishReason = (result as any).finishReason || (result as any).finishReasonType || null;
+    finishReason = result.finishReason || null;
     
-    // Extract timing information
-    const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
-    const usage = (result as any).usage || {};
+    // Extract timing information (may be in providerMetadata for some providers)
+    const resultWithMetadata = result as typeof result & {
+      thinkingTime?: number;
+      reasoningTime?: number;
+    };
+    const thinkingTime = resultWithMetadata.thinkingTime || resultWithMetadata.reasoningTime || null;
+    const usage = result.usage || { inputTokens: undefined, outputTokens: undefined, totalTokens: undefined };
     
     // Log timing metrics and finish reason
     console.log("[UI Generation] Timing Metrics (retry without tools):", {
@@ -225,9 +233,9 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
       totalTimeSec: (totalTime / 1000).toFixed(2),
       thinkingTimeMs: thinkingTime,
       thinkingTimeSec: thinkingTime ? (thinkingTime / 1000).toFixed(2) : null,
-      promptTokens: usage.promptTokens || "N/A",
-      completionTokens: usage.completionTokens || "N/A",
-      totalTokens: usage.totalTokens || "N/A",
+      promptTokens: usage.inputTokens ?? "N/A",
+      completionTokens: usage.outputTokens ?? "N/A",
+      totalTokens: usage.totalTokens ?? "N/A",
       finishReason: finishReason || "N/A",
     });
   }

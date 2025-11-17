@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
 import Screen from "@/components/Screen";
@@ -65,7 +65,7 @@ export default function WorkspacePage() {
 
   // Create shared mouse state ref (needed by both dragging and arrow drawing)
   const isMouseDownRef = useRef(false);
-  const [isMouseDown, setIsMouseDown] = useState(false);
+  const [, setIsMouseDown] = useState(false);
 
   // Screen dragging (needs to be initialized first to provide mouse state to arrow drawing)
   const {
@@ -98,14 +98,13 @@ export default function WorkspacePage() {
           arrowLine,
     setArrowLine,
     isCloningScreen,
-    hoveredScreenIdRef,
+    hoveredScreenId,
     handleMouseMove: handleArrowMouseMove,
     handleMouseUp: handleArrowMouseUp,
     handleOverlayClick,
     handleCreateScreenFromPendingArrow,
   } = useArrowDrawing({
     screens,
-    selectedScreenId,
     handleScreenUpdate,
     setScreens,
     viewportHandleRef,
@@ -163,6 +162,69 @@ export default function WorkspacePage() {
     handleDragMouseUp(e);
   };
 
+  // Memoize arrow line rendering to avoid ref access during render
+  const arrowLineOverlay = useMemo(() => {
+    if (!arrowLine) return null;
+    
+    const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
+    const endScreenId = hoveredScreenId;
+    const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
+
+    // Convert from viewport coordinates to content coordinates
+    // eslint-disable-next-line react-hooks/refs -- viewportToContent is needed for coordinate conversion in useMemo
+    const viewportToContent = viewportHandleRef.current?.viewportToContent;
+    // eslint-disable-next-line react-hooks/refs -- checking ref value in useMemo is acceptable
+    if (!viewportToContent) return null;
+    // eslint-disable-next-line react-hooks/refs -- viewportToContent is a stable function reference
+    const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
+    // eslint-disable-next-line react-hooks/refs -- viewportToContent is a stable function reference
+    const endContent = viewportToContent(arrowLine.end.x, arrowLine.end.y);
+    const startContentX = startContent.x;
+    const startContentY = startContent.y;
+    const endContentX = endContent.x;
+    const endContentY = endContent.y;
+
+    const startScreenBounds = startScreen?.position
+      ? {
+          x: startScreen.position.x,
+          y: startScreen.position.y,
+          width: 390,
+          height: startScreen.height || 844,
+        }
+      : undefined;
+    const endScreenBounds = endScreen?.position
+      ? {
+          x: endScreen.position.x,
+          y: endScreen.position.y,
+          width: 390,
+          height: endScreen.height || 844,
+        }
+      : undefined;
+    // Check if arrow is active (related to selected screen)
+    const isActive =
+      selectedScreenId === arrowLine.startScreenId || selectedScreenId === endScreenId;
+    return (
+      <>
+        <ArrowLine
+          start={{ x: startContentX, y: startContentY }}
+          end={{ x: endContentX, y: endContentY }}
+          startScreenBounds={startScreenBounds}
+          endScreenBounds={endScreenBounds}
+          isActive={isActive}
+          markerId={`arrow-${arrowLine.startScreenId}-${endScreenId || "pending"}`}
+        />
+        {arrowLine.isPending && (
+          <CreateFromTouchableButton
+            position={{ x: endContentX, y: endContentY }}
+            onClick={handleCreateScreenFromPendingArrow}
+            disabled={isCloningScreen}
+            touchableId={arrowLine.touchableId}
+          />
+        )}
+      </>
+    );
+  }, [arrowLine, hoveredScreenId, screens, selectedScreenId, isCloningScreen, handleCreateScreenFromPendingArrow, viewportHandleRef]);
+
   if (isLoadingWorkspace) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -206,62 +268,7 @@ export default function WorkspacePage() {
           style={{ cursor: isDraggingScreen ? "grabbing" : "default" }}
         >
           {/* Arrow line overlay - rendered in content coordinates */}
-          {arrowLine &&
-            (() => {
-              const startScreen = screens.find((s) => s.id === arrowLine.startScreenId);
-              const endScreenId = hoveredScreenIdRef.current;
-              const endScreen = endScreenId ? screens.find((s) => s.id === endScreenId) : null;
-
-              // Convert from viewport coordinates to content coordinates
-              const viewportToContent = viewportHandleRef.current?.viewportToContent;
-              if (!viewportToContent) return null;
-              const startContent = viewportToContent(arrowLine.start.x, arrowLine.start.y);
-              const endContent = viewportToContent(arrowLine.end.x, arrowLine.end.y);
-              const startContentX = startContent.x;
-              const startContentY = startContent.y;
-              const endContentX = endContent.x;
-              const endContentY = endContent.y;
-
-              const startScreenBounds = startScreen?.position
-                ? {
-                    x: startScreen.position.x,
-                    y: startScreen.position.y,
-                    width: 390,
-                    height: startScreen.height || 844,
-                  }
-                : undefined;
-              const endScreenBounds = endScreen?.position
-                ? {
-                    x: endScreen.position.x,
-                    y: endScreen.position.y,
-                    width: 390,
-                    height: endScreen.height || 844,
-                  }
-                : undefined;
-              // Check if arrow is active (related to selected screen)
-              const isActive =
-                selectedScreenId === arrowLine.startScreenId || selectedScreenId === endScreenId;
-              return (
-                <>
-                  <ArrowLine
-                    start={{ x: startContentX, y: startContentY }}
-                    end={{ x: endContentX, y: endContentY }}
-                    startScreenBounds={startScreenBounds}
-                    endScreenBounds={endScreenBounds}
-                    isActive={isActive}
-                    markerId={`arrow-${arrowLine.startScreenId}-${endScreenId || "pending"}`}
-                  />
-                  {arrowLine.isPending && (
-                    <CreateFromTouchableButton
-                      position={{ x: endContentX, y: endContentY }}
-                      onClick={handleCreateScreenFromPendingArrow}
-                      disabled={isCloningScreen}
-                      touchableId={arrowLine.touchableId}
-                    />
-                  )}
-                </>
-              );
-            })()}
+          {arrowLineOverlay}
           {/* Render all stored arrows from conversation points */}
           {screens.flatMap((screen) => {
             if (!screen.position) return [];

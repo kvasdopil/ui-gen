@@ -652,6 +652,44 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Generated files are excluded from ESLint
 - **Location**: `prisma/schema.prisma`, `.gitignore`, `tsconfig.json`, `eslint.config.mjs`
 
+### 27. Workspace Page Refactoring
+
+- **Decision**: Refactor the large workspace page component (1600+ lines) into smaller, focused custom hooks
+- **Reason**: 
+  - **DRY**: Logic extracted into reusable hooks
+  - **KISS**: Each hook has a single responsibility
+  - **Maintainability**: Easier to test and modify individual concerns
+  - **Readability**: Main component becomes a clear composition of concerns
+- **Implementation**:
+  - **Utility Functions**: Extracted to `src/lib/workspace-utils.ts`
+    - `snapToGrid()` - Grid snapping for screen positioning
+    - `toKebabCase()` - String conversion for file names
+    - `wrapHtmlWithTailwindAndRemoveLinks()` - HTML processing for exports
+  - **Custom Hooks**:
+    - `useWorkspace.ts` - Workspace loading, name management, page title updates
+    - `useScreens.ts` - Screen state management, CRUD operations, loading/saving, selection
+    - `useScreenDragging.ts` - Screen dragging logic, mouse event handling, drag state
+    - `useArrowDrawing.ts` - Arrow drawing, connection management, pending arrows, screen cloning from arrows
+    - `useScreenCreation.ts` - New screen creation flows, context menu, form handling
+    - `useViewportHelpers.ts` - Viewport utilities (center and zoom screen)
+    - `useWorkspaceDownload.ts` - Workspace export to ZIP functionality
+  - **Main Component**: `src/app/ws/[id]/page.tsx` now focuses on:
+    - Composing all hooks together
+    - JSX rendering and event handler wiring
+    - Coordinating between hooks when needed
+    - Reduced from 1600 lines to ~416 lines (74% reduction)
+  - **Hook Dependencies**:
+    - Hooks are designed to be independent where possible
+    - Shared state (like `isMouseDownRef`) is created in main component and passed to hooks
+    - Hooks return state and handlers needed by the component
+    - Component wires handlers to JSX events
+- **Benefits**:
+  - Each hook can be tested independently
+  - Logic is easier to understand and modify
+  - Main component is much more readable
+  - Follows React best practices for custom hooks
+- **Location**: `src/hooks/`, `src/lib/workspace-utils.ts`, `src/app/ws/[id]/page.tsx`
+
 ## Notes for AI Assistants
 
 ### Critical Implementation Details
@@ -700,12 +738,16 @@ This file contains important technical notes, decisions, and gotchas for future 
 - Storage debouncing: Screen saves are debounced by 300ms to batch rapid updates and prevent race conditions
 - Optimized screen saving: Only the specific screen that was updated (position or selectedPromptIndex) is saved to the API, not all screens - prevents unnecessary API calls when moving screens
   - `handleScreenUpdate` tracks which screen was updated via `lastUpdatedScreenIdRef` when position or selectedPromptIndex changes
-  - Save effect in `page.tsx` checks `lastUpdatedScreenIdRef` and only saves that specific screen using `storage.saveScreen()`
+  - Save effect in `useScreens` hook checks `lastUpdatedScreenIdRef` and only saves that specific screen using `storage.saveScreen()`
   - If no specific screen is tracked, no save occurs (prevents saving on initial load or unrelated updates)
 - Initial load protection: `hasCompletedInitialLoadRef` prevents saving during initial page load to avoid unnecessary update calls
 - Position preservation: Screen positions are always preserved during updates unless explicitly changed
 - Wheel event listener uses `{ passive: false }` to allow preventDefault for zoom
 - No default screen - page starts empty, user clicks to create first screen
+- **Hooks Architecture**: Workspace page functionality is split into focused custom hooks (see Architecture Decision #27)
+  - Each hook manages a specific concern and can be tested independently
+  - Main component composes hooks and handles JSX rendering
+  - Shared state (refs, callbacks) is managed in main component and passed to hooks
 
 ### Interaction Patterns
 

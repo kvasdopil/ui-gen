@@ -16,7 +16,6 @@ export type ArrowLine = {
 
 interface UseArrowDrawingProps {
   screens: ScreenData[];
-  selectedScreenId: string | null;
   handleScreenUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
   setScreens: React.Dispatch<React.SetStateAction<ScreenData[]>>;
   viewportHandleRef: React.RefObject<ViewportHandle | null>;
@@ -27,7 +26,6 @@ interface UseArrowDrawingProps {
 
 export function useArrowDrawing({
   screens,
-  selectedScreenId,
   handleScreenUpdate,
   setScreens,
   viewportHandleRef,
@@ -37,6 +35,7 @@ export function useArrowDrawing({
 }: UseArrowDrawingProps) {
   const [arrowLine, setArrowLine] = useState<ArrowLine | null>(null);
   const [isCloningScreen, setIsCloningScreen] = useState(false);
+  const [hoveredScreenId, setHoveredScreenId] = useState<string | null>(null);
   const hoveredScreenIdRef = useRef<string | null>(null);
 
   // Handle mouse move for arrow drawing
@@ -69,8 +68,10 @@ export function useArrowDrawing({
           // Only update hovered screen if it's different from start screen
           if (hoveredScreenId && hoveredScreenId !== arrowLine.startScreenId) {
             hoveredScreenIdRef.current = hoveredScreenId;
+            setHoveredScreenId(hoveredScreenId);
           } else {
             hoveredScreenIdRef.current = null;
+            setHoveredScreenId(null);
           }
 
           setArrowLine({
@@ -204,6 +205,7 @@ export function useArrowDrawing({
           // Clear arrow state after saving
           setArrowLine(null);
           hoveredScreenIdRef.current = null;
+          setHoveredScreenId(null);
           setIsMouseDown(false);
           isMouseDownRef.current = false;
           return;
@@ -214,6 +216,7 @@ export function useArrowDrawing({
             isPending: true,
           });
           hoveredScreenIdRef.current = null;
+          setHoveredScreenId(null);
           setIsMouseDown(false);
           isMouseDownRef.current = false;
           return;
@@ -459,7 +462,7 @@ export function useArrowDrawing({
     arrowLine,
     setArrowLine,
     isCloningScreen,
-    hoveredScreenIdRef,
+    hoveredScreenId,
     handleMouseMove,
     handleMouseUp,
     handleOverlayClick,

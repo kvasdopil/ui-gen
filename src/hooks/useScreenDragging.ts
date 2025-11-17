@@ -8,7 +8,7 @@ interface UseScreenDraggingProps {
   selectedScreenId: string | null;
   setSelectedScreenId: (id: string | null) => void;
   handleScreenUpdate: (screenId: string, updates: Partial<ScreenData>) => void;
-  handleScreenClick: (screenId: string, onClearPendingArrow?: () => void, onCloseDialogs?: () => void) => void;
+  handleScreenClick: (screenId: string, onClearPendingArrow?: () => void, onCloseDialogs?: () => void, justFinishedDraggingRef?: React.MutableRefObject<string | null>) => void;
   viewportHandleRef: React.RefObject<ViewportHandle | null>;
   onCloseDialogs?: () => void;
   newScreenFormRef: React.RefObject<HTMLDivElement | null>;
@@ -166,7 +166,7 @@ export function useScreenDragging({
         }
       }
     },
-    [draggedScreenId, screenDragStart, isDraggingScreen, screens, handleScreenUpdate, viewportHandleRef],
+    [draggedScreenId, screenDragStart, isDraggingScreen, screens, handleScreenUpdate, viewportHandleRef, isMouseDownRef],
   );
 
   // Handle mouse up for screen dragging
@@ -213,7 +213,7 @@ export function useScreenDragging({
       setDraggedScreenId(null);
       draggedScreenIdRef.current = null; // Clear ref state
     },
-    [draggedScreenId, isDraggingScreen, handleScreenClick, onCloseDialogs, newScreenFormRef, justFinishedDraggingRef],
+    [draggedScreenId, isDraggingScreen, handleScreenClick, onCloseDialogs, newScreenFormRef, justFinishedDraggingRef, isMouseDownRef, setIsMouseDown],
   );
 
   // Attach global window listeners when dragging to continue drag even if mouse leaves viewport
@@ -241,10 +241,9 @@ export function useScreenDragging({
         window.removeEventListener("mouseup", handleGlobalMouseUp, { capture: true });
       };
     }
-  }, [draggedScreenId, handleMouseMove, handleMouseUp]);
+  }, [draggedScreenId, handleMouseMove, handleMouseUp, isMouseDownRef]);
 
   return {
-    isMouseDown,
     isMouseDownRef,
     draggedScreenId,
     isDraggingScreen,
