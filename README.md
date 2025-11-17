@@ -620,6 +620,8 @@ All endpoints require authentication (OAuth user session).
 
 - `GET /api/screens/:id/dialog?workspaceId=:id` - List all dialog entries for a screen (requires workspaceId query parameter)
 - `POST /api/screens/:id/dialog` - Create dialog entry (requires `prompt`, generates HTML automatically, workspaceId in body or query)
+  - **Limit**: Maximum 20 conversation points per screen (returns 400 error if limit reached)
+  - **Validation**: Rejects empty HTML from LLM with meaningful error message based on finish reason
 - `PUT /api/screens/:id/dialog/:dialogId?workspaceId=:id` - Update dialog entry arrows (requires workspaceId query parameter)
 - `DELETE /api/screens/:id/dialog/:dialogId?workspaceId=:id` - Delete dialog entry (requires workspaceId query parameter)
 
@@ -655,8 +657,15 @@ All endpoints require authentication (OAuth user session).
   - Gracefully falls back to generation without tools if tool calls fail
 - Cleans up markdown code blocks from AI responses
 - Generated HTML includes title metadata as a comment (`<!-- Title: ... -->`)
-- Error handling: Displays error messages instead of loading placeholder when generation fails
-- Retry support: Users can retry failed generations via a "Retry" button directly on the error screen
+- **Empty HTML Validation**: Backend validates that generated HTML is not empty - if LLM returns empty HTML, returns error with meaningful message based on finish reason
+- **Finish Reason Detection**: Extracts finish reason from LLM response to provide specific error messages:
+  - `length`: Token limit reached - suggests shorter prompts
+  - `content_filter`: Content filtered by safety filters - suggests rephrasing
+  - `stop`: Generation stopped unexpectedly - suggests retry
+  - `tool_calls`: Stopped for tool calls - suggests retry
+- **Error Handling**: Displays error messages instead of loading placeholder when generation fails
+- **Retry Support**: Users can retry failed generations via a "Retry" button directly on the error screen
+- **Conversation Point Limit**: Hard limit of 20 conversation points per screen to prevent excessive API usage and maintain performance
 
 ### Authentication & User Management
 

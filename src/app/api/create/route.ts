@@ -28,7 +28,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const html = await generateUIFromHistory(history as HistoryItem[]);
+    const generationResult = await generateUIFromHistory(history as HistoryItem[]);
+    const html = generationResult.html;
 
     return NextResponse.json({
       html,

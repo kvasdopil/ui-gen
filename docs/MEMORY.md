@@ -220,16 +220,24 @@ This file contains important technical notes, decisions, and gotchas for future 
 
 ### 17. Duplicate API Call Prevention
 
-- **Decision**: Use screen ID + timestamp for generation key and reuse existing incomplete points
+- **Decision**: Use screen ID + timestamp for generation key and reuse existing incomplete points, with immediate loading state to prevent race conditions
 - **Reason**:
   - Auto-generation effect could trigger multiple times with different timestamps
   - Multiple API calls for the same generation waste resources and cause duplicate entries
+  - Race conditions could occur if effect runs multiple times before `isLoading` is set
 - **Implementation**:
   - Generation key format: `${screenData.id}-${lastPoint.timestamp}` (more unique than prompt-timestamp)
   - When auto-generation triggers, pass existing timestamp to `handleSend` to reuse incomplete point
   - `handleSend` checks for existing incomplete points before creating new ones
   - When called from auto-generation with existing timestamp, reuse the incomplete point from `screenData`
   - Preserve original timestamp when completing conversation points
+  - **Race Condition Prevention**:
+    - Check for `lastPoint.id` FIRST in auto-generation effect - if point has ID, it was processed by server (even if HTML is empty), so don't regenerate
+    - Set `isLoading` immediately in `handleSend` at the start to prevent duplicate calls
+    - Reset `isLoading` and generation ref if `handleSend` returns early (e.g., empty prompt)
+  - **Infinite Loop Prevention**:
+    - Points with IDs are treated as "completed" even if HTML is empty (prevents loops when server returns empty HTML)
+    - Error handling prevents auto-retry when generation fails (user must manually retry)
 - **Location**: `src/components/Screen.tsx`
 
 ### 19. Clickable Highlights Overlay
@@ -431,6 +439,12 @@ This file contains important technical notes, decisions, and gotchas for future 
 - **Dialog Entries**: `src/app/api/screens/[id]/dialog/route.ts` and `src/app/api/screens/[id]/dialog/[dialogId]/route.ts`
   - GET: List all dialog entries for a screen (includes arrows)
   - POST: Create dialog entry (requires prompt, generates HTML automatically)
+    - **Limit Check**: Validates that screen has fewer than 20 dialog entries before creating new one (returns 400 error if limit reached)
+    - **Empty HTML Validation**: Validates that generated HTML is not empty after cleaning
+      - If empty, returns 500 error with message based on finish reason from LLM
+      - Finish reason extracted from `generateUIFromHistory()` result
+      - Provides specific error messages: token limit, content filter, unexpected stop, tool calls, etc.
+    - **Finish Reason**: Extracts finish reason from LLM response to provide meaningful error messages
   - PUT: Update dialog entry arrows (requires dialogId, updates arrows JSON field only - other fields are immutable)
   - DELETE: Delete dialog entry (requires screen ID and dialog entry ID)
   - Dialog entries are mostly immutable (prompt, html, title cannot be updated) - only arrows can be updated via PUT endpoint
@@ -458,9 +472,25 @@ This file contains important technical notes, decisions, and gotchas for future 
     - Gracefully falls back to generation without tools if tool calls fail
     - Wrapped in try-catch that retries generation without tools on error
   - Cleans markdown code blocks from response
+  - Returns object with both `html` and `finishReason` for better error handling
+  - **Finish Reason Extraction**: Extracts `finishReason` from LLM result (checks both `finishReason` and `finishReasonType` properties)
+    - Logs finish reason in timing metrics for debugging
+    - Used by API route to provide specific error messages when HTML is empty
+  - **Empty HTML Validation**: Backend validates that generated HTML is not empty after cleaning
+    - If empty, returns 500 error with message based on finish reason:
+      - `length`: "Generation was cut off due to token limit. Try a shorter prompt or break it into smaller requests."
+      - `content_filter`: "Content was filtered by safety filters. Please rephrase your request."
+      - `stop`: "Generation stopped unexpectedly. Please try again."
+      - `tool_calls`: "Generation stopped for tool calls. Please try again."
+      - Other/unknown: Includes finish reason in message
+  - **Client-Side Validation**: Client also validates HTML is not empty as defensive check
   - Returns HTML with title metadata comment (`<!-- Title: ... -->`)
   - **Error Handling**: Displays error messages instead of loading placeholder when generation fails
   - **Retry Support**: Users can retry failed generations via a "Retry" button directly on the error screen (moved from PromptPanel menu for better visibility)
+  - **Conversation Point Limit**: Hard limit of 20 conversation points per screen enforced in both API route and client-side
+    - API route returns 400 error if limit reached
+    - Client-side validation prevents unnecessary API calls
+    - Limit applies to all conversation point creation paths (new screens, modifications, cloned screens)
 
 - **Deprecated**: `src/app/api/create/route.ts`
   - Kept for backward compatibility
@@ -664,6 +694,9 @@ This file contains important technical notes, decisions, and gotchas for future 
 - Z-index: Newer screens appear above older ones; selected screens always on top
 - Duplicate API call prevention: `generationInProgressRef` tracks in-progress generations using screen ID + timestamp key
 - Race condition prevention: `handleScreenUpdate` uses functional updates to always work with latest state
+- Infinite loop prevention: Auto-generation effect checks for `lastPoint.id` first - points with IDs are treated as completed even if HTML is empty
+- Conversation point limit: Hard limit of 20 conversation points per screen enforced in API route and client-side validation
+- Empty HTML handling: Backend validates HTML is not empty and returns error with finish reason; client also validates as defensive check
 - Storage debouncing: Screen saves are debounced by 300ms to batch rapid updates and prevent race conditions
 - Optimized screen saving: Only the specific screen that was updated (position or selectedPromptIndex) is saved to the API, not all screens - prevents unnecessary API calls when moving screens
   - `handleScreenUpdate` tracks which screen was updated via `lastUpdatedScreenIdRef` when position or selectedPromptIndex changes

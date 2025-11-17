@@ -115,6 +115,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "Screen not found" }, { status: 404 });
     }
 
+    // Check hard limit of 20 conversation points per screen
+    if (screen.dialogEntries.length >= 20) {
+      return NextResponse.json(
+        { error: "Maximum limit of 20 conversation points per screen reached" },
+        { status: 400 },
+      );
+    }
+
     const body = await request.json();
     const validatedData = createDialogSchema.parse(body);
 
@@ -124,7 +132,40 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     history.push({ type: "user", content: validatedData.prompt });
 
     // Generate HTML from the full conversation history
-    const html = await generateUIFromHistory(history);
+    const generationResult = await generateUIFromHistory(history);
+    const html = generationResult.html;
+    const finishReason = generationResult.finishReason;
+    
+    // Validate that HTML is not empty after cleaning
+    // Empty HTML indicates the LLM failed to generate valid content
+    if (!html || html.trim().length === 0) {
+      // Provide more meaningful error message based on finish reason
+      let errorMessage = "UI generation failed: LLM returned empty HTML.";
+      
+      if (finishReason) {
+        switch (finishReason) {
+          case "length":
+            errorMessage += " Generation was cut off due to token limit. Try a shorter prompt or break it into smaller requests.";
+            break;
+          case "content_filter":
+            errorMessage += " Content was filtered by safety filters. Please rephrase your request.";
+            break;
+          case "stop":
+            errorMessage += " Generation stopped unexpectedly. Please try again.";
+            break;
+          case "tool_calls":
+            errorMessage += " Generation stopped for tool calls. Please try again.";
+            break;
+          default:
+            errorMessage += ` Generation stopped with reason: ${finishReason}. Please try again.`;
+        }
+      } else {
+        errorMessage += " Please try again.";
+      }
+      
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+    
     const title = extractTitle(html);
 
     // Create dialog entry

@@ -561,7 +561,14 @@ export default function Screen({
   useEffect(() => {
     if (screenData && screenData.conversationPoints.length > 0 && !isLoading) {
       const lastPoint = screenData.conversationPoints[screenData.conversationPoints.length - 1];
-      // If last point has a prompt but no HTML, it means generation needs to start
+      
+      // Don't trigger if the point already has an ID (it's already been sent to the server and processed)
+      // This prevents loops even if the server returned empty/invalid HTML
+      if (lastPoint.id) {
+        return;
+      }
+      
+      // If last point has a prompt but no HTML and no ID, it means generation needs to start
       if (lastPoint.prompt && !lastPoint.html) {
         // Don't auto-retry if there's an error for this point (user should retry manually)
         if (errorTimestamp && lastPoint.timestamp === errorTimestamp) {
@@ -574,6 +581,8 @@ export default function Screen({
         // Only trigger if we haven't already started generation for this point
         if (generationInProgressRef.current !== generationKey) {
           generationInProgressRef.current = generationKey;
+          // Set loading state immediately to prevent duplicate calls from race conditions
+          setIsLoading(true);
           // Use the existing incomplete point instead of creating a new one
           handleSend(lastPoint.prompt, lastPoint.timestamp);
         }
@@ -585,8 +594,30 @@ export default function Screen({
   }, [screenData, isLoading, errorTimestamp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (modificationPrompt: string, existingTimestamp?: number) => {
-    if (!modificationPrompt.trim()) return;
+    if (!modificationPrompt.trim()) {
+      // Reset loading state if prompt is empty (shouldn't happen from auto-generation, but be safe)
+      setIsLoading(false);
+      generationInProgressRef.current = null;
+      return;
+    }
+
+    // Check hard limit of 20 conversation points per screen
+    const currentPointsCount = existingTimestamp && screenData
+      ? screenData.conversationPoints.length
+      : conversationPoints.length;
+    
+    if (currentPointsCount >= 20) {
+      setErrorMessage("Maximum limit of 20 conversation points per screen reached");
+      setErrorTimestamp(existingTimestamp || Date.now());
+      setIsLoading(false);
+      generationInProgressRef.current = null;
+      return;
+    }
+
     const promptToSend = modificationPrompt;
+
+    // Set loading state immediately to prevent duplicate calls
+    setIsLoading(true);
 
     // Clear any previous error when starting a new generation
     setErrorMessage(null);
@@ -641,7 +672,6 @@ export default function Screen({
       }
     }
 
-    setIsLoading(true);
     try {
       let response: Response;
       let data: {
@@ -688,6 +718,11 @@ export default function Screen({
       } else {
         // This shouldn't happen for modifications, but handle it just in case
         throw new Error("Screen data not found");
+      }
+
+      // Validate that HTML is not empty (defensive check - backend should catch this)
+      if (!data.html || data.html.trim().length === 0) {
+        throw new Error("UI generation failed: LLM returned empty HTML. Please try again.");
       }
 
       // Extract title from HTML

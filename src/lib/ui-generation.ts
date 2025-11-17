@@ -53,7 +53,10 @@ async function findUnsplashImage(query: string): Promise<string> {
   }
 }
 
-export async function generateUIFromHistory(history: HistoryItem[]): Promise<string> {
+export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
+  html: string;
+  finishReason: string | null;
+}> {
   // Check if OIDC token is configured (Vercel AI Gateway uses OIDC authentication)
   // In production/preview: Vercel automatically provides the token via headers (handled by gateway provider)
   // In local development: Token must be in VERCEL_OIDC_TOKEN environment variable
@@ -158,6 +161,7 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
 
   // Generate HTML using Vercel AI SDK with conversation history and tools
   let text: string;
+  let finishReason: string | null = null;
   const requestStartTime = Date.now();
   
   try {
@@ -175,12 +179,14 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
     const totalTime = generateEndTime - generateStartTime;
     
     text = result.text;
+    // Extract finish reason from result (available in AI SDK)
+    finishReason = (result as any).finishReason || (result as any).finishReasonType || null;
     
     // Extract timing information
     const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
     const usage = (result as any).usage || {};
     
-    // Log timing metrics
+    // Log timing metrics and finish reason
     console.log("[UI Generation] Timing Metrics:", {
       totalTimeMs: totalTime,
       totalTimeSec: (totalTime / 1000).toFixed(2),
@@ -189,6 +195,7 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       promptTokens: usage.promptTokens || "N/A",
       completionTokens: usage.completionTokens || "N/A",
       totalTokens: usage.totalTokens || "N/A",
+      finishReason: finishReason || "N/A",
     });
   } catch (error) {
     // If tool call fails, retry without tools to allow generation to continue
@@ -205,12 +212,14 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
     const totalTime = generateEndTime - generateStartTime;
     
     text = result.text;
+    // Extract finish reason from result (available in AI SDK)
+    finishReason = (result as any).finishReason || (result as any).finishReasonType || null;
     
     // Extract timing information
     const thinkingTime = (result as any).thinkingTime || (result as any).reasoningTime || null;
     const usage = (result as any).usage || {};
     
-    // Log timing metrics
+    // Log timing metrics and finish reason
     console.log("[UI Generation] Timing Metrics (retry without tools):", {
       totalTimeMs: totalTime,
       totalTimeSec: (totalTime / 1000).toFixed(2),
@@ -219,6 +228,7 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
       promptTokens: usage.promptTokens || "N/A",
       completionTokens: usage.completionTokens || "N/A",
       totalTokens: usage.totalTokens || "N/A",
+      finishReason: finishReason || "N/A",
     });
   }
   
@@ -244,5 +254,9 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<str
   // Trim again after cleanup
   cleanedHtml = cleanedHtml.trim();
 
-  return cleanedHtml;
+  // Return both HTML and finish reason for better error handling
+  return {
+    html: cleanedHtml,
+    finishReason: finishReason,
+  };
 }

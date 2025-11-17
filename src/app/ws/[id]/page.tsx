@@ -804,6 +804,14 @@ export default function WorkspacePage() {
 
       const clonedScreen: ScreenData = await cloneResponse.json();
 
+      // Check hard limit of 20 conversation points per screen
+      if (clonedScreen.conversationPoints.length >= 20) {
+        console.error("Cannot add conversation point: maximum limit of 20 reached");
+        setIsCloningScreen(false);
+        // TODO: Show error to user
+        return;
+      }
+
       // Step 2: Add new dialog entry to the cloned screen with the prompt
       const timestamp = Date.now();
       const screenWithNewEntry: ScreenData = {
