@@ -1236,7 +1236,7 @@ export default function WorkspacePage() {
       <WorkspaceHeader workspaceName={workspaceName} onNameUpdate={handleWorkspaceNameUpdate} />
       <Viewport
         ref={viewportHandleRef}
-        disabled={!!draggedScreenId || !!arrowLine}
+        disabled={!!draggedScreenId || (!!arrowLine && !arrowLine.isPending)}
         onPanStart={() => {
           // Cancel new screen mode if active when panning starts
           if (isNewScreenMode) {
@@ -1244,6 +1244,10 @@ export default function WorkspacePage() {
           }
           if (isCreateScreenPopupMode) {
             setIsCreateScreenPopupMode(false);
+          }
+          // Dismiss pending arrow when starting to pan
+          if (arrowLine?.isPending) {
+            setArrowLine(null);
           }
         }}
         onContextMenu={handleContextMenu}
@@ -1319,6 +1323,11 @@ export default function WorkspacePage() {
 
             return screen.conversationPoints.flatMap(
               (conversationPoint, conversationPointIndex) => {
+                // Only show arrows for the currently selected conversation point
+                if (screen.selectedPromptIndex !== conversationPointIndex) {
+                  return [];
+                }
+
                 const arrows = conversationPoint.arrows || [];
                 // Filter out arrows without valid targetScreenId
                 return arrows

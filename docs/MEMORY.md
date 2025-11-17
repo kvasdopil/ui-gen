@@ -289,7 +289,14 @@ This file contains important technical notes, decisions, and gotchas for future 
   - Only one pending button (CreateFromTouchableButton) exists at a time - starting a new arrow automatically removes the previous pending arrow
   - Touchable remains unlinked until the button is clicked - arrow is only saved to database when button is clicked or when dropped on a screen
   - Touchable ID (aria-roledescription) is used to identify arrows instead of overlay index for stable identification
-- **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`
+  - **Viewport Interaction**: The viewport is NOT disabled when showing a pending button - users can pan and zoom normally while the button is visible
+    - Viewport is only disabled when actively drawing an arrow (`arrowLine` exists and `isPending` is false)
+    - This allows users to navigate and position screens while deciding whether to click the button
+  - **Dismissal on Pan**: Starting to pan the viewport dismisses the pending arrow and button
+    - `onPanStart` handler in Viewport component checks for pending arrows and clears them
+  - **Click Outside**: Clicking outside the button (on viewport, screens, or empty space) dismisses the pending arrow
+    - Existing `handleMouseDown` logic already handles this by checking if click is on the button
+- **Location**: `src/app/page.tsx`, `src/components/Screen.tsx`, `src/components/Viewport.tsx`
 
 ### 21. Arrow Color Coding and Visual Hierarchy
 

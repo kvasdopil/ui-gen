@@ -6,7 +6,7 @@ import { TbHandClick } from "react-icons/tb";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import PromptPanel, { type PromptPanelHandle } from "./PromptPanel";
-import type { ScreenData, ConversationPoint } from "@/lib/types";
+import type { ScreenData, ConversationPoint, ConversationPointArrow } from "@/lib/types";
 import { storage } from "@/lib/storage";
 
 interface ScreenProps {
@@ -672,6 +672,46 @@ export default function Screen({
       // Extract title from HTML
       const title = data.title || extractTitle(data.html);
 
+      // Helper function to extract touchable IDs from HTML
+      const extractTouchableIds = (html: string): Set<string> => {
+        const touchableIds = new Set<string>();
+        // Create a temporary DOM element to parse HTML
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        // Find all <a> and <button> elements with aria-roledescription
+        const links = doc.querySelectorAll("a[aria-roledescription]");
+        const buttons = doc.querySelectorAll("button[aria-roledescription]");
+        links.forEach((link) => {
+          const touchableId = link.getAttribute("aria-roledescription");
+          if (touchableId) {
+            touchableIds.add(touchableId);
+          }
+        });
+        buttons.forEach((button) => {
+          const touchableId = button.getAttribute("aria-roledescription");
+          if (touchableId) {
+            touchableIds.add(touchableId);
+          }
+        });
+        return touchableIds;
+      };
+
+      // Copy arrows from previous conversation point if they exist
+      let copiedArrows: ConversationPointArrow[] = [];
+      if (pointsWithIncomplete.length > 0 && incompleteIndex > 0) {
+        // Get the previous conversation point (the one before the incomplete one we just added)
+        const previousPointIndex = incompleteIndex - 1;
+        const previousPoint = pointsWithIncomplete[previousPointIndex];
+        if (previousPoint?.arrows && previousPoint.arrows.length > 0) {
+          // Extract touchable IDs from the new HTML
+          const newTouchableIds = extractTouchableIds(data.html);
+          // Filter arrows to only include those whose touchableId exists in the new HTML
+          copiedArrows = previousPoint.arrows.filter((arrow) =>
+            newTouchableIds.has(arrow.touchableId),
+          );
+        }
+      }
+
       // Create the completed conversation point with HTML and title
       // Preserve the original timestamp from the incomplete point and the ID from the API
       const completedPoint: ConversationPoint = {
@@ -680,6 +720,7 @@ export default function Screen({
         html: data.html,
         title,
         timestamp: data.timestamp || timestampToUse,
+        arrows: copiedArrows.length > 0 ? copiedArrows : undefined,
       };
 
       // Replace the incomplete point with the completed one
@@ -710,6 +751,15 @@ export default function Screen({
           conversationPoints: finalPoints,
           selectedPromptIndex: newSelectedPromptIndex,
         });
+      }
+
+      // Save copied arrows to database if they exist
+      if (copiedArrows.length > 0 && completedPoint.id) {
+        storage
+          .updateDialogEntryArrows(id, completedPoint.id, copiedArrows)
+          .catch((error) => {
+            console.error("Error saving copied arrows to database:", error);
+          });
       }
     } catch (error) {
       console.error("Error generating UI:", error);
