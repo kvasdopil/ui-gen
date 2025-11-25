@@ -1,7 +1,7 @@
 // import { openai } from "@ai-sdk/openai";
 // import { google } from "@ai-sdk/google";
 import { createGatewayProvider } from "@ai-sdk/gateway";
-import { generateText, tool } from "ai";
+import { generateText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { GENERATE_UI_PROMPT } from "@/prompts/generate-ui";
 
@@ -160,6 +160,7 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
   });
 
   // Generate HTML using Vercel AI SDK with conversation history and tools
+  // Use stopWhen to automatically handle tool calls in a loop
   let text: string;
   let finishReason: string | null = null;
   const requestStartTime = Date.now();
@@ -174,6 +175,10 @@ export async function generateUIFromHistory(history: HistoryItem[]): Promise<{
       tools: {
         findUnsplashImage: findUnsplashImageTool,
       },
+      // stopWhen allows automatic tool call handling - the SDK will execute tools
+      // and continue generation until we get text output or hit the step limit
+      // stepCountIs(5) allows up to 5 tool call rounds (default is 1)
+      stopWhen: stepCountIs(5),
     });
     const generateEndTime = Date.now();
     const totalTime = generateEndTime - generateStartTime;
